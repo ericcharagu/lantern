@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Techama Chatbot</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .container {
+        background-color: #f5f5f5;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      input[type="text"],
+      textarea,
+      select {
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 15px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      textarea {
+        height: 100px;
+        resize: vertical;
+      }
+      button {
+        background-color: #4caf50;
+        color: white;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+      .response {
+        margin-top: 20px;
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: #fff;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sauti Ai</h1>
+    <h4>Text in multiple languages designed for Africa!!!</h4>
+    <div class="container">
+      <h2>Generate Text</h2>
+      <form id="generateForm">
+        <label for="model">Model:</label>
+        <input
+          type="text"
+          id="model"
+          name="model"
+          value="qwen3:0.6b"
+          required
+        />
+
+        <label for="prompt">Prompt:</label>
+        <textarea id="prompt" name="prompt" required>
+Explain quantum mechanics?</textarea
+        >
+
+        <label for="stream">Stream:</label>
+        <select id="stream" name="stream">
+          <option value="false">False</option>
+          <option value="true">True</option>
+        </select>
+
+        <label for="max_tokens">Max Tokens (optional):</label>
+        <input type="number" id="max_tokens" name="max_tokens" />
+
+        <label for="temperature">Temperature (optional):</label>
+        <input
+          type="number"
+          id="temperature"
+          name="temperature"
+          step="0.1"
+          min="0"
+          max="2"
+        />
+
+        <button type="submit">Generate</button>
+      </form>
+    </div>
+
+    <div class="container">
+      <h2>Response</h2>
+      <div id="response" class="response">Results will appear here...</div>
+    </div>
+
+    <script>
+      document
+        .getElementById("generateForm")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+
+          const model = document.getElementById("model").value;
+          const prompt = document.getElementById("prompt").value;
+          const stream = document.getElementById("stream").value === "true";
+          const maxTokens = document.getElementById("max_tokens").value;
+          const temperature = document.getElementById("temperature").value;
+
+          const payload = {
+            model: model,
+            prompt: prompt,
+            stream: stream,
+          };
+
+          if (maxTokens) payload.max_tokens = parseInt(maxTokens);
+          if (temperature) payload.temperature = parseFloat(temperature);
+
+          const responseDiv = document.getElementById("response");
+          responseDiv.textContent = "Generating...";
+
+          try {
+            const response = await fetch("/generate", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            });
+
+            const data = await response.json();
+            responseDiv.textContent = JSON.stringify(data, null, 2);
+          } catch (error) {
+            responseDiv.textContent = "Error: " + error.message;
+          }
+        });
+    </script>
+  </body>
+</html>

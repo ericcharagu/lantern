@@ -1,0 +1,10 @@
+uvicorn 
+fastapi
+httpx
+jinja2
+python-multipart
+ollama
+loguru
+transformers
+duckduckgo_search
+watchfiles
