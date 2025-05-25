@@ -8,3 +8,9 @@ loguru
 transformers
 duckduckgo_search
 watchfiles
+reportlab
+pdfkit
+wkhtmltopdf
+sqlalchemy
+polars 
+load_dotenv

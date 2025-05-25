@@ -1,19 +1,30 @@
 import json
 import statistics
-from datetime import datetime
+from datetime import datetime, date
 from typing import Dict, Optional, List, Any
-import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 from ollama import AsyncClient
 from pydantic import BaseModel
+from utils.db import get_traffic_analytics
+from utils.holidays import holiday_checker
+from utils.llm_output_formatter import (
+    create_pdf_from_text,
+    get_cleaned_text_only,
+)
+from utils.whatsapp import whatsapp_messenger
+
+# Getting the current date
+today = date.today()
+target_date = datetime(today.year, today.month, today.day)
+
 
 app = FastAPI(title="Foot Traffic Analytics API")
 llm_model_id: str = "qwen3:0.6b"
 # Main file logging
-logger.add("./main_app.log", rotation="700 MB")
+logger.add("./logs/main_app.log", rotation="700 MB")
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
@@ -24,20 +35,20 @@ app.add_middleware(
 )
 
 # Ollama client for LLM analysis
-ollama_client = AsyncClient(host="http://localhost:11434")
+ollama_client = AsyncClient(host="http://ollama:11434")
 
 
 class FootTrafficData(BaseModel):
     """Model for foot traffic data input"""
 
     timestamp: str
-    location: str
+    camera_name: str
     count: int
-    direction: Optional[str] = None  # entry/exit
+    location: Optional[str] = None  # indoor/outdoor
     weather: Optional[str] = None
     temperature: Optional[float] = None
     day_of_week: Optional[str] = None
-    is_holiday: Optional[bool] = False
+    is_holiday: Optional[bool] = None
 
 
 class BuildingStats(BaseModel):
@@ -283,20 +294,24 @@ def create_recommendations(
     return recommendations
 
 
+@logger.catch
 @app.post("/analyse")
 async def analyze_foot_traffic(request: AnalysisRequest):
     """Main endpoint for foot traffic analysis"""
     try:
         # Calculate statistics
         stats = calculate_traffic_statistics(request.traffic_data)
+        logger.info(holiday_checker(request.traffic_data[0].timestamp))
 
         # Generate insights and recommendations
         insights = generate_insights(stats, request.building_stats)
         recommendations = create_recommendations(stats, request.building_stats)
-
+        # Get sql statistics for the day
+        sql_daily_results = get_traffic_analytics(today)
+        logger.info(sql_daily_results)
         # Prepare data for LLM analysis
         analysis_context = {
-            "statistics": stats,
+            "statistics": sql_daily_results,
             "insights": insights,
             "recommendations": recommendations,
             "building_info": request.building_stats.dict()
@@ -318,7 +333,7 @@ Your analysis should include:
 
 Use the provided statistics, insights, and recommendations as a foundation, but add your own analytical perspective. Present findings in a clear, professional format suitable for building managers and business stakeholders.
 
-Focus on actionable insights that can improve operations, enhance visitor experience, and optimize resource allocation."""
+Focus on actionable insights thvercelat can improve operations, enhance visitor experience, and optimize resource allocation."""
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -372,11 +387,15 @@ Generate a detailed analytical report with specific recommendations for improvin
                 "include_predictions": request.include_predictions,
             },
         }
+        cleaned_llm_report = get_cleaned_text_only(llm_report)
+        create_pdf_from_text(llm_report)
+
+        whatsapp_messenger("Analysis complete")
 
         return JSONResponse(status_code=200, content=analysis_result)
 
-    except Exception as e:
-        logger.error(f"Analysis error: {str(e)}")
+    except ValueError as e:
+        logger.debug(f"Analysis error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
@@ -427,7 +446,8 @@ async def root():
     }
 
 
+"""
 # Main entry point
 if __name__ == "__main__":
     print("Starting Foot Traffic Analytics API server on http://localhost:8000")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)"""

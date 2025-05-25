@@ -1,0 +1,61 @@
+version: "3.8"
+services:
+  llm_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_service
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - ./logs:/app/logs
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - llm_network
+    command:
+      - "uvicorn"
+      - "main:app"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--log-level"
+      - "info"
+      - "--reload" # Remove in production
+    ports:
+      - "8000:8000"
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: qwen_backend
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    entrypoint: >
+      sh -c "
+        ollama serve &
+        sleep 5 &&
+        ollama pull qwen3:0.6b &&
+        tail -f /dev/null
+      "
+    networks:
+      - llm_network
+
+networks:
+  llm_network:
+    driver: bridge
+
+volumes:
+  ollama_data:

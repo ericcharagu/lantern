@@ -1,6 +1,0 @@
-2025-05-24 11:48:11.835 | ERROR    | main:analyze_foot_traffic:381 - Analysis error: 'AnalysisRequest' object has no attribute 'model'
-2025-05-24 11:48:11.835 | ERROR    | main:analyze_foot_traffic:381 - Analysis error: 'AnalysisRequest' object has no attribute 'model'
-2025-05-24 11:53:23.429 | ERROR    | main:analyze_foot_traffic:380 - Analysis error: 'AnalysisRequest' object has no attribute 'temperature'
-2025-05-24 11:53:23.429 | ERROR    | main:analyze_foot_traffic:380 - Analysis error: 'AnalysisRequest' object has no attribute 'temperature'
-2025-05-24 14:15:35.633 | ERROR    | main:analyze_foot_traffic:379 - Analysis error: 'AnalysisRequest' object has no attribute 'model'
-2025-05-24 14:15:35.633 | ERROR    | main:analyze_foot_traffic:379 - Analysis error: 'AnalysisRequest' object has no attribute 'model'

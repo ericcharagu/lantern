@@ -1,10 +1,10 @@
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 
 # Test logger file
-logger.add("./test.log", rotation="1 week")
+logger.add("./logs/test.log", rotation="1 week")
 # Base URL
 BASE_URL = "http://localhost:8000"
 LLM_MODEL = "qwen3:0.6b"
@@ -46,23 +46,25 @@ def get_full_analysis():
     analysis_request = {
         "traffic_data": [
             {
-                "timestamp": "2024-01-15T09:00:00Z",
-                "location": "main_entrance",
-                "count": 45,
-                "direction": "entry",
-                "weather": "sunny",
-                "temperature": 22.5,
-                "day_of_week": "monday",
+                "timestamp": "2023-11-14T00:00:00Z",
+                "camera_name": "cam_service_entrance_00",
+                "count": 8,
+                "location": "service_entrance",
+                "direction": "exit",
+                "weather": "cloudy",
+                "temperature": 16.2,
+                "day_of_week": "tuesday",
                 "is_holiday": False,
             },
             {
-                "timestamp": "2024-01-15T10:00:00Z",
-                "location": "main_entrance",
-                "count": 67,
+                "timestamp": "2023-11-14T01:00:00Z",
+                "camera_name": "cam_parking_gate_01",
+                "count": 6,
+                "location": "parking_gate",
                 "direction": "entry",
-                "weather": "sunny",
-                "temperature": 24.0,
-                "day_of_week": "monday",
+                "weather": "foggy",
+                "temperature": 15.8,
+                "day_of_week": "tuesday",
                 "is_holiday": False,
             },
         ],
