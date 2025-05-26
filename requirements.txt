@@ -12,5 +12,6 @@ reportlab
 pdfkit
 wkhtmltopdf
 sqlalchemy
-polars 
 load_dotenv
+psycopg2-binary
+

@@ -387,10 +387,9 @@ Generate a detailed analytical report with specific recommendations for improvin
                 "include_predictions": request.include_predictions,
             },
         }
-        cleaned_llm_report = get_cleaned_text_only(llm_report)
-        create_pdf_from_text(llm_report)
+        create_pdf_from_text(get_cleaned_text_only(llm_report))
 
-        whatsapp_messenger("Analysis complete")
+        # whatsapp_messenger("Analysis complete")
 
         return JSONResponse(status_code=200, content=analysis_result)
 

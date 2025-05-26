@@ -8,12 +8,21 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     volumes:
       - ./:/app
       - ./logs:/app/logs
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD_FILE=/run/secrets/postgres_secrets
+    secrets:
+      - postgres_secrets
     networks:
       - llm_network
     command:
@@ -53,9 +62,40 @@ services:
     networks:
       - llm_network
 
+  postgres:
+    image: docker.io/library/postgres:17.5-alpine
+    container_name: lantern_postgres_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=posgres
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_secrets
+      #- POSTGRES_PASSWORD=mysecretpassword
+    secrets:
+      - postgres_secrets
+    user: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - llm_network
+
 networks:
   llm_network:
     driver: bridge
 
 volumes:
   ollama_data:
+  postgres_data:
+
+secrets:
+  postgres_secrets:
+    file: ./secrets/postgres_secrets.txt

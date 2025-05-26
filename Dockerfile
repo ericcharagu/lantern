@@ -38,6 +38,7 @@ RUN addgroup -g 1001 -S appgroup && \
     adduser -S appuser -u 1001 -G appgroup && \
     mkdir -p ./logs && \
     mkdir -p ./reports && \
+    mkdir -p ./secrets && \
     chown -R appuser:appgroup /app
 
 # Switch to non-root user

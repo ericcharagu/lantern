@@ -10,6 +10,10 @@ wheels/
 .venv
 .env
 .env.local
+
 #Logs
 *.log 
 logs/
+
+#Secrets/Passwrods
+#secrets/
