@@ -16,4 +16,4 @@ wheels/
 logs/
 
 #Secrets/Passwrods
-#secrets/
+secrets/
