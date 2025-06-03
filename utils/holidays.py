@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from loguru import logger
+from typing import Any
 
 logger.add("./logs/holidays.log", rotation="700 MB")
 
@@ -75,7 +76,7 @@ current_year = date.today().year
 holidays = get_kenyan_holidays(current_year)
 
 
-def holiday_checker(date_string: str, holidays: dict = holidays):
+def holiday_checker(date_string: Any, holidays: dict = holidays):
     """
     Convert the string datetime into actual dates and check if date is in holiday list
     """

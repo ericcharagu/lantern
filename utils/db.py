@@ -2,24 +2,15 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, Integer, String, DateTime, Numeric, Boolean
-from datetime import datetime, date
 from dotenv import load_dotenv
 import os
 from loguru import logger
 from typing import Any
+from datetime import datetime
 
 # Define logger path
 logger.add("./logs/db.log", rotation="700 MB")
 load_dotenv()
-
-# Database connection
-DATABASE_NAME = os.getenv("DB_HOST", "postgres")
-DATABASE_USER = os.getenv("DB_USER", "postgres")
-DATABASE_PASSWORD = os.getenv("POSTGRESS_PASSWORD_FILE")
-DATABASE_PORT = os.getenv("DB_PORT", "5432")
-DATABASE_URL = (
-    f"postgresql://{DATABASE_USER}:{DATABASE_PASSWORD}@postgres:5432/{DATABASE_NAME}"
-)
 
 
 def get_connection_string():
@@ -97,7 +88,8 @@ def get_hourly_counts_sorted(target_date: Any) -> list:
 
 def get_top_locations(target_date: Any, n: int = 5) -> list:
     """Get top n locations by total count - optimized aggregation"""
-    query = """
+    try:
+        query = """
     SELECT 
         location,
         SUM(count) AS total_count,
@@ -109,7 +101,10 @@ def get_top_locations(target_date: Any, n: int = 5) -> list:
     ORDER BY total_count DESC
     LIMIT :limit_n;
     """
-    return execute_query(query, {"target_date": target_date.date(), "limit_n": n})
+        return execute_query(query, {"target_date": target_date.date(), "limit_n": n})
+    except ValueError as e:
+        logger.debug(f"Failed to get locations statistics due to {e}")
+        return []
 
 
 def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
@@ -260,13 +255,15 @@ def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
 
     except ValueError as e:
         logger.debug(f"Error in get_traffic_analytics: {e}")
+        return {}
 
 
 def get_traffic_summary(target_date: datetime) -> dict:
     """
     Get a quick traffic summary - ultra-optimized single query
     """
-    query = """
+    try:
+        query = """
     SELECT 
         COUNT(*) AS total_records,
         SUM(count) AS total_traffic,
@@ -279,13 +276,8 @@ def get_traffic_summary(target_date: datetime) -> dict:
     WHERE DATE(timestamp) = :target_date;
     """
 
-    result = execute_query(query, {"target_date": target_date})
-    return result[0] if result else {}
-
-
-# Example usage:
-# target_date = datetime(2024, 1, 15)
-# analytics = get_traffic_analytics(target_date)
-# summary = get_traffic_summary(target_date)
-# print("Analytics:", analytics)
-# print("Summary:", summary)
+        result = execute_query(query, {"target_date": target_date})
+        return result[0]
+    except ValueError as e:
+        logger.debug(f"Results misisng for the date due to {e}")
+        return {}
