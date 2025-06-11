@@ -15,5 +15,8 @@ wheels/
 *.log 
 logs/
 
+#Report folder
+/utils/reports/
+
 #Secrets/Passwrods
 secrets/

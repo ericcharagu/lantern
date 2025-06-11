@@ -14,4 +14,10 @@ wkhtmltopdf
 sqlalchemy
 load_dotenv
 psycopg2-binary
-
+supervision
+opencv-python
+werkzeug
+python-jose[cryptography]
+passlib
+bcrypt
+pydantic[email]

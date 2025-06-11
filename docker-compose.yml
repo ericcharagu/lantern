@@ -10,11 +10,12 @@ services:
     restart: always
     networks:
       - llm_network
+
   llm_service:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: llm_service
+    container_name: llm_server
     depends_on:
       ollama:
         condition: service_healthy
@@ -24,13 +25,8 @@ services:
       - ./:/app
       - ./logs:/app/logs
     restart: unless-stopped
-    environment:
-      - PYTHONUNBUFFERED=1
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=postgres
-      - DB_USER=postgres
-      - DB_PASSWORD_FILE=/run/secrets/postgres_secrets
+    env_file:
+      - .env
     secrets:
       - postgres_secrets
     networks:
@@ -50,7 +46,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    container_name: qwen_backend
+    container_name: ollama_server
     ports:
       - "11434:11434"
     volumes:
@@ -74,18 +70,16 @@ services:
 
   postgres:
     image: docker.io/library/postgres:17.5-alpine
-    container_name: lantern_postgres_db
+    container_name: db_server
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
-
     environment:
       - POSTGRES_DB=postgres
-      #- POSTGRES_USER=posgres
+      - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_secrets
-      #- POSTGRES_PASSWORD=mysecretpassword
     secrets:
       - postgres_secrets
     user: postgres

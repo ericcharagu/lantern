@@ -1,328 +1,446 @@
+from fastapi import FastAPI, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
 import cv2
-from flask import Flask, Response
+import asyncio
+import uvicorn
 from ultralytics import YOLO
-import threading
-import time
-import socket
+from threading import Lock
+from typing import Dict, Optional
+from loguru import logger
+import traceback
 
-# RTSP Configuration
-username = "admin"
-password = "Lantern@2030"
-ip_address = "192.168.1."
-port = 554
-# Try different RTSP URL formats for your camera
-rtsp_urls = [
-    f"rtsp://{username}:{password}@{ip_address}:{port}/cam/realmonitor?channel=30&subtype=0",
-    # f"rtsp://{username}:{password}@{ip_address}:{port}/cam/realmonitor?channel=channel&subtype=0",
-    # f"rtsp://{username}:{password}@{ip_address}:{port}/h264Preview_01_main",
-    # f"rtsp://{username}:{password}@{ip_address}:{port}/h264Preview_01_sub",
-    # f"rtsp://{username}:{password}@{ip_address}:{port}/live/ch00_0",
-    # f"rtsp://{username}:{password}@{ip_address}:{port}/live/main",
-    # f"rtsp://{username}:{password}@{ip_address}:{port}/stream1",
-    # f"rtsp://{username}:{password}@{ip_address}:{port}/stream2",
-]
+# Configure logging
+logger.add("camera_system.log", rotation="10 MB", retention="7 days")
 
+# Constants
+USERNAME = "admin"
+PASSWORD = "Lantern@2030"
+PORT = 554
 
-def test_network_connection():
-    """Test if the camera IP is reachable"""
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(5)
-        result = sock.connect_ex((ip_address, port))
-        sock.close()
-        return result == 0
-    except Exception as e:
-        print(f"Network test error: {e}")
-        return False
-
-
-def find_working_rtsp_url():
-    """Try different RTSP URL formats to find one that works"""
-    if not test_network_connection():
-        print(f"ERROR: Cannot reach camera at {ip_address}:{port}")
-        print("Please check:")
-        print("1. Camera IP address and port")
-        print("2. Network connectivity")
-        print("3. Camera is powered on")
-        return None
-
-    print(f"Camera is reachable at {ip_address}:{port}")
-    print("Testing RTSP URL formats...")
-
-    for i, url in enumerate(rtsp_urls):
-        print(f"Testing URL {i + 1}/{len(rtsp_urls)}: {url}")
-        cap = cv2.VideoCapture(url)
-
-        # Set connection parameters
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
-        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)  # 10 second read timeout
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-        if cap.isOpened():
-            # Try to read a frame to confirm it works
-            success, frame = cap.read()
-            cap.release()
-            if success and frame is not None:
-                print(f"✓ SUCCESS: Found working URL: {url}")
-                return url
-            else:
-                print(f"✗ URL opens but cannot read frames: {url}")
-        else:
-            print(f"✗ Cannot open URL: {url}")
-
-    print("ERROR: No working RTSP URL found!")
-    return None
-
-
-app = Flask(__name__)
+# Camera configuration dictionary (32 cameras)
+CAMERAS = {
+    1: {"channel": 1, "ip": "192.168.1.79", "name": "Borehole"},
+    2: {"channel": 2, "ip": "192.168.1.199", "name": "Borehole"},
+    3: {"channel": 3, "ip": "192.168.1.67", "name": "Exit Gate Wall"},
+    4: {"channel": 4, "ip": "192.168.1.139", "name": "Main Gate"},
+    5: {"channel": 5, "ip": "192.168.1.78", "name": "Third Flight"},
+    6: {"channel": 6, "ip": "192.168.1.66", "name": "Fourth Flight"},
+    7: {"channel": 7, "ip": "192.168.1.197", "name": "Fifth Flight"},
+    8: {"channel": 8, "ip": "192.168.1.75", "name": "Sixth Flight"},
+    9: {"channel": 9, "ip": "192.168.1.73", "name": "Seventh Flight"},
+    10: {"channel": 10, "ip": "192.168.1.74", "name": "Eighth Flight"},
+    11: {"channel": 11, "ip": "192.168.1.82", "name": "Ninth Flight"},
+    12: {"channel": 12, "ip": "192.168.1.77", "name": "Tenth Flight"},
+    13: {"channel": 13, "ip": "192.168.1.70", "name": "Eleventh Flight"},
+    14: {"channel": 14, "ip": "192.168.1.81", "name": "Twelfth Flight"},
+    15: {"channel": 15, "ip": "192.168.1.89", "name": "Thirteenth Flight"},
+    16: {"channel": 16, "ip": "192.168.1.90", "name": "Fourteenth Flight"},
+    17: {"channel": 17, "ip": "192.168.1.137", "name": "Fifteenth Flight"},
+    18: {"channel": 18, "ip": "192.168.1.136", "name": "Sixteenth Flight"},
+    19: {"channel": 19, "ip": "192.168.1.202", "name": "Seventeenth Flight"},
+    20: {"channel": 20, "ip": "192.168.1.72", "name": "Eighteenth Flight"},
+    21: {"channel": 21, "ip": "192.168.1.129", "name": "Nineteenth Flight"},
+    22: {"channel": 22, "ip": "192.168.1.116", "name": "Twentieth Flight"},
+    23: {"channel": 23, "ip": "192.168.1.190", "name": "Twenty-first Flight"},
+    24: {"channel": 24, "ip": "192.168.1.135", "name": "Twenty-second Flight"},
+    25: {"channel": 25, "ip": "192.168.1.103", "name": "Twenty-third Flight"},
+    26: {"channel": 26, "ip": "192.168.1.61", "name": "Twenty-fourth Flight"},
+    27: {"channel": 27, "ip": "192.168.1.71", "name": "Twenty-fifth Flight"},
+    28: {"channel": 28, "ip": "192.168.1.102", "name": "Twenty-sixth Flight"},
+    29: {"channel": 29, "ip": "192.168.1.68", "name": "Twenty-seventh Flight"},
+    30: {"channel": 30, "ip": "192.168.1.120", "name": "Twenty-eighth Flight"},
+    31: {"channel": 31, "ip": "192.168.1.69", "name": "Twenty-ninth Flight"},
+    32: {"channel": 32, "ip": "192.168.1.76", "name": "Thirtieth Flight"},
+}
 
 # Global variables for frame management
-current_frame = None
-frame_lock = threading.Lock()
+current_frames: Dict[int, Optional[bytes]] = {cam_id: None for cam_id in CAMERAS}
+frame_locks: Dict[int, Lock] = {cam_id: Lock() for cam_id in CAMERAS}
+stream_active = True
 
+# Initialize YOLO model once to avoid loading it repeatedly
+try:
+    yolo_model = YOLO("yolo11n.pt")  # Using nano model for better performance
+    logger.info("YOLO model loaded successfully")
+except Exception as e:
+    logger.error(f"Failed to load YOLO model: {e}")
+    yolo_model = None
 
-def capture_frames():
-    """Background thread to continuously capture frames from RTSP stream"""
-    global current_frame
+app = FastAPI(title="Multi-Camera Monitoring System", version="1.0.0")
 
-    # Find a working RTSP URL
-    working_url = find_working_rtsp_url()
-    if not working_url:
-        print("FATAL: No working RTSP URL found. Exiting capture thread.")
-        return
+def generate_rtsp_url(camera: dict) -> list[str]:
+    """Generate possible RTSP URLs for a camera"""
+    base_url = f"rtsp://{USERNAME}:{PASSWORD}@{camera['ip']}:{PORT}"
+    return [
+        f"{base_url}/cam/realmonitor?channel={camera['channel']}&subtype=0",  # Dahua format
+        f"{base_url}/Streaming/Channels/{camera['channel']}01",  # Hikvision format
+        #f"{base_url}/axis-media/media.amp?videocodec=h264&camera={camera['channel']}"  # Axis format
+    ]
 
-    reconnect_attempts = 0
-    max_reconnect_attempts = 5
+async def process_frame_with_yolo(frame):
+    """Process frame with YOLO detection"""
+    if yolo_model is None:
+        return frame
 
-    while reconnect_attempts < max_reconnect_attempts:
-        print(f"Connecting to RTSP stream... (Attempt {reconnect_attempts + 1})")
+    try:
+        # Run YOLO inference
+        results = yolo_model.predict(frame, conf=0.3, verbose=False)
+        if len(results) > 0 and results[0].boxes is not None:
+            # Draw bounding boxes and labels
+            annotated_frame = results[0].plot()
+            return annotated_frame
+    except Exception as e:
+        logger.error(f"YOLO processing error: {str(e)}")
 
-        cap = cv2.VideoCapture(working_url)
+    return frame
 
-        # Set OpenCV parameters for better RTSP handling
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)  # 15 second connection timeout
-        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 15000)  # 15 second read timeout
-        cap.set(cv2.CAP_PROP_FPS, 15)  # Request 15 FPS
-        cap.set(
-            cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("H", "2", "6", "4")
-        )  # Force H264
+async def capture_camera_frames(cam_id: int, camera_config: dict):
+    """Background task to continuously capture frames from a specific camera"""
+    global current_frames, stream_active
 
-        if not cap.isOpened():
-            print(f"Error: Could not open RTSP stream: {working_url}")
-            reconnect_attempts += 1
-            time.sleep(5)
+    rtsp_urls = generate_rtsp_url(camera_config)
+    cap = None
+    reconnect_delay = 5
+    max_reconnect_delay = 60
+
+    logger.info(f"Starting capture task for camera {cam_id} - {camera_config['name']}")
+
+    while stream_active:
+        # Try to connect to camera
+        for url in rtsp_urls:
+            try:
+                logger.info(f"Attempting to connect to camera {cam_id} at {url}")
+                cap = cv2.VideoCapture(url)
+
+                # Set buffer size to reduce latency
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_FPS, 30)
+
+                if cap.isOpened():
+                    logger.info(f"Successfully connected to camera {cam_id}")
+                    reconnect_delay = 5  # Reset delay on successful connection
+                    break
+                else:
+                    cap.release()
+                    cap = None
+
+            except Exception as e:
+                logger.error(f"Error connecting to camera {cam_id}: {str(e)}")
+                if cap:
+                    cap.release()
+                cap = None
+                continue
+
+        if cap is None or not cap.isOpened():
+            logger.warning(f"Could not connect to any RTSP URL for camera {cam_id}")
+            await asyncio.sleep(reconnect_delay)
+            reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
             continue
 
-        print("✓ Successfully connected to RTSP stream")
-        reconnect_attempts = 0  # Reset on successful connection
+        # Main frame capture loop
+        frame_count = 0
+        try:
+            while stream_active and cap.isOpened():
+                ret, frame = cap.read()
 
-        consecutive_failures = 0
-        max_consecutive_failures = 30  # Allow some frame drops
-
-        while True:
-            success, frame = cap.read()
-
-            if not success or frame is None:
-                consecutive_failures += 1
-                print(
-                    f"Frame read failed ({consecutive_failures}/{max_consecutive_failures})"
-                )
-
-                if consecutive_failures >= max_consecutive_failures:
-                    print("Too many consecutive frame failures. Reconnecting...")
+                if not ret:
+                    logger.warning(f"Frame read failed for camera {cam_id}")
                     break
 
-                time.sleep(0.1)  # Short delay before retry
-                continue
+                frame_count += 1
 
-            # Successfully read frame
-            consecutive_failures = 0
+                # Process every nth frame with YOLO to reduce CPU load
+                if frame_count % 3 == 0:  # Process every 3rd frame
+                    frame = await process_frame_with_yolo(frame)
 
-            # Basic frame validation
-            if frame.shape[0] < 50 or frame.shape[1] < 50:
-                print("Warning: Frame too small, skipping...")
-                continue
+                # Resize frame to reduce bandwidth
+                height, width = frame.shape[:2]
+                if width > 640:
+                    scale = 640 / width
+                    new_width = 640
+                    new_height = int(height * scale)
+                    frame = cv2.resize(frame, (new_width, new_height))
 
-            with frame_lock:
-                current_frame = frame.copy()
+                # Encode frame as JPEG
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 75]
+                ret, buffer = cv2.imencode('.jpg', frame, encode_param)
 
-            time.sleep(0.033)  # ~30 FPS cap
+                if ret:
+                    with frame_locks[cam_id]:
+                        current_frames[cam_id] = buffer.tobytes()
 
-        cap.release()
-        reconnect_attempts += 1
-        if reconnect_attempts < max_reconnect_attempts:
-            print(
-                f"Reconnecting in 5 seconds... ({reconnect_attempts}/{max_reconnect_attempts})"
-            )
-            time.sleep(5)
-
-    print("FATAL: Max reconnection attempts reached. Stopping capture thread.")
-
-
-def generate_frames():
-    """Generator function for Flask streaming"""
-    global current_frame
-
-    # Load YOLO model
-    try:
-        model = YOLO("yolo11l.pt")  # Using nano model for faster inference
-        print("YOLO model loaded successfully")
-    except Exception as e:
-        print(f"Error loading YOLO model: {e}")
-        return
-
-    while True:
-        with frame_lock:
-            if current_frame is None:
-                continue
-            frame = current_frame.copy()
-
-        try:
-            # Make predictions
-            results = model.predict(frame, conf=0.3, verbose=False)
-
-            # Draw results on frame
-            if len(results) > 0:
-                frame = results[0].plot()
-
-            # Encode frame as JPEG
-            success, buffer = cv2.imencode(
-                ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80]
-            )
-            if not success:
-                continue
-
-            frame_bytes = buffer.tobytes()
-
-            yield (
-                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-            )
+                # Control frame rate
+                await asyncio.sleep(0.033)  # ~30 FPS
 
         except Exception as e:
-            print(f"Error in frame processing: {e}")
-            continue
+            logger.error(f"Error in frame capture for camera {cam_id}: {str(e)}")
+            logger.error(traceback.format_exc())
+        finally:
+            if cap:
+                cap.release()
+                logger.info(f"Released capture for camera {cam_id}")
 
+        # Wait before attempting to reconnect
+        if stream_active:
+            logger.info(f"Attempting to reconnect to camera {cam_id} in {reconnect_delay} seconds...")
+            await asyncio.sleep(reconnect_delay)
 
-@app.route("/")
-def index():
-    """Home page with video feed"""
-    return """
+async def generate_frames(cam_id: int):
+    """Generator function for streaming frames"""
+    while True:
+        try:
+            with frame_locks[cam_id]:
+                frame = current_frames[cam_id]
+
+            if frame:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            else:
+                # Send a placeholder image if no frame available
+                placeholder = create_placeholder_frame(f"Camera {cam_id}\nConnecting...")
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + placeholder + b'\r\n')
+
+            await asyncio.sleep(0.033)  # ~30 FPS
+
+        except Exception as e:
+            logger.error(f"Error in frame generation for camera {cam_id}: {str(e)}")
+            await asyncio.sleep(1)
+
+def create_placeholder_frame(text: str) -> bytes:
+    """Create a placeholder frame with text"""
+    import numpy as np
+
+    # Create a black image
+    img = np.zeros((240, 320, 3), dtype=np.uint8)
+
+    # Add text
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.7
+    color = (255, 255, 255)
+    thickness = 2
+
+    # Split text into lines
+    lines = text.split('\n')
+    y_offset = 100
+
+    for line in lines:
+        text_size = cv2.getTextSize(line, font, font_scale, thickness)[0]
+        x = (img.shape[1] - text_size[0]) // 2
+        cv2.putText(img, line, (x, y_offset), font, font_scale, color, thickness)
+        y_offset += 40
+
+    # Encode as JPEG
+    ret, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return buffer.tobytes() if ret else b''
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks for all cameras on startup"""
+    logger.info("Starting Multi-Camera Monitoring System")
+
+    for cam_id, config in CAMERAS.items():
+        asyncio.create_task(capture_camera_frames(cam_id, config))
+
+    logger.info(f"Started capture tasks for {len(CAMERAS)} cameras")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    global stream_active
+    stream_active = False
+    logger.info("Shutting down camera streams")
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    """Home page with all camera feeds in a responsive grid"""
+    camera_html = "".join(
+        f"""
+        <div class="camera">
+            <div class="camera-header">
+                <h3>Camera {cam_id}</h3>
+                <span class="camera-name">{config["name"]}</span>
+                <span class="camera-ip">{config["ip"]}</span>
+            </div>
+            <div class="camera-stream">
+                <img src="/video/{cam_id}" alt="Camera {cam_id} Stream" loading="lazy">
+            </div>
+        </div>
+        """
+        for cam_id, config in CAMERAS.items()
+    )
+
+    return f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Lantern Service Apartments Stream</title>
+        <title>Multi-Camera Monitoring System</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                text-align: center; 
-                background-color: #f0f0f0;
+            * {{ box-sizing: border-box; }}
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 margin: 0;
                 padding: 20px;
-            }
-            .container {
-                max-width: 1200px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+            }}
+            .container {{
+                max-width: 95%;
                 margin: 0 auto;
-                background-color: white;
-                padding: 20px;
+            }}
+            h1 {{
+                color: white;
+                text-align: center;
+                margin-bottom: 30px;
+                font-size: 2.5em;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            }}
+            .stats {{
+                background: rgba(255,255,255,0.1);
+                backdrop-filter: blur(10px);
                 border-radius: 10px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            }
-            h1 { color: #333; }
-            img { 
-                max-width: 100%; 
-                height: auto; 
-                border: 2px solid #333;
-                border-radius: 5px;
-            }
-            .info {
-                margin-top: 20px;
-                padding: 10px;
-                background-color: #e7f3ff;
-                border-radius: 5px;
-            }
+                padding: 20px;
+                margin-bottom: 30px;
+                text-align: center;
+                color: white;
+            }}
+            .camera-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+                gap: 20px;
+                margin-bottom: 20px;
+            }}
+            .camera {{
+                background: rgba(255,255,255,0.95);
+                backdrop-filter: blur(10px);
+                border-radius: 12px;
+                padding: 15px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+                transition: transform 0.3s ease, box-shadow 0.3s ease;
+            }}
+            .camera:hover {{
+                transform: translateY(-5px);
+                box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+            }}
+            .camera-header {{
+                margin-bottom: 12px;
+            }}
+            .camera-header h3 {{
+                margin: 0;
+                font-size: 18px;
+                color: #333;
+                font-weight: 600;
+            }}
+            .camera-name {{
+                display: block;
+                font-size: 14px;
+                color: #666;
+                margin-top: 4px;
+            }}
+            .camera-ip {{
+                display: block;
+                font-size: 12px;
+                color: #999;
+                font-family: monospace;
+                margin-top: 2px;
+            }}
+            .camera-stream {{
+                position: relative;
+                overflow: hidden;
+                border-radius: 8px;
+            }}
+            .camera img {{
+                width: 100%;
+                height: auto;
+                max-height: 250px;
+                object-fit: cover;
+                border-radius: 8px;
+                transition: opacity 0.3s ease;
+            }}
+            .camera img:hover {{
+                opacity: 0.9;
+            }}
+            @media (max-width: 768px) {{
+                .camera-grid {{
+                    grid-template-columns: 1fr;
+                }}
+                h1 {{
+                    font-size: 2em;
+                }}
+            }}
+            @media (max-width: 480px) {{
+                .container {{
+                    padding: 10px;
+                }}
+                h1 {{
+                    font-size: 1.8em;
+                }}
+            }}
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>RTSP YOLO Object Detection Stream</h1>
-            <img src="/video" alt="RTSP Stream with YOLO Detection">
-            <div class="info">
-                <p><strong>Stream Source:</strong> RTSP Camera</p>
-                <p><strong>Detection Model:</strong> YOLO11</p>
-                <p><strong>Confidence Threshold:</strong> 30%</p>
+            <h1>🎥 Multi-Camera Monitoring System</h1>
+            <div class="stats">
+                <h3>System Status</h3>
+                <p>Monitoring {len(CAMERAS)} cameras with AI object detection</p>
+                <p>Real-time YOLO inference • Auto-reconnection • 30 FPS streaming</p>
+            </div>
+            <div class="camera-grid">
+                {camera_html}
             </div>
         </div>
     </body>
     </html>
     """
 
+@app.get("/video/{cam_id}")
+async def video_feed(cam_id: int):
+    """Video streaming endpoint for individual cameras"""
+    if cam_id not in CAMERAS:
+        return Response("Camera not found", status_code=404)
 
-@app.route("/video")
-def video():
-    """Video streaming route"""
-    return Response(
-        generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame"
+    return StreamingResponse(
+        generate_frames(cam_id),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
     )
 
+@app.get("/api/cameras")
+async def get_cameras():
+    """API endpoint to get camera information"""
+    return {"cameras": CAMERAS, "total": len(CAMERAS)}
 
-@app.route("/status")
-def status():
-    """Status endpoint to check if stream is working"""
-    global current_frame
-    with frame_lock:
-        if current_frame is not None:
-            return {"status": "streaming", "message": "RTSP stream is active"}
-        else:
-            return {"status": "error", "message": "No frames available"}
+@app.get("/api/camera/{cam_id}")
+async def get_camera_info(cam_id: int):
+    """API endpoint to get specific camera information"""
+    if cam_id not in CAMERAS:
+        return Response("Camera not found", status_code=404)
 
+    return {"camera": CAMERAS[cam_id], "cam_id": cam_id}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    active_cameras = sum(1 for frame in current_frames.values() if frame is not None)
+    return {
+        "status": "healthy",
+        "total_cameras": len(CAMERAS),
+        "active_cameras": active_cameras,
+        "yolo_loaded": yolo_model is not None
+    }
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("Maitho Application")
-    print("=" * 60)
-
-    # Test network connectivity first
-    print("Step 1: Testing network connectivity...")
-    if not test_network_connection():
-        print("FATAL ERROR: Cannot reach camera!")
-        print("\nTroubleshooting steps:")
-        print("1. Ping the camera IP: ping", ip_address)
-        print("2. Check if camera web interface works: http://{}".format(ip_address))
-        print("3. Verify camera is powered on and network connected")
-        print("4. Check firewall settings")
-        exit(1)
-
-    print("Step 2: Finding working RTSP URL...")
-    working_url = find_working_rtsp_url()
-    if not working_url:
-        print("FATAL ERROR: No working RTSP URL found!")
-        print("\nTroubleshooting steps:")
-        print("1. Check camera documentation for correct RTSP path")
-        print("2. Verify username and password are correct")
-        print("3. Try accessing RTSP stream with VLC media player")
-        print("4. Check if RTSP is enabled on camera")
-        exit(1)
-
-    print("Step 3: Starting capture thread...")
-    # Start the frame capture thread
-    capture_thread = threading.Thread(target=capture_frames, daemon=True)
-    capture_thread.start()
-
-    print("Step 4: Starting Flask web server...")
-    print(f"Working RTSP URL: {working_url}")
-    print("Access the stream at: http://localhost:5000")
-    print("Direct video feed: http://localhost:5000/video")
-    print("Status check: http://localhost:5000/status")
-    print("=" * 60)
-
-    # Give the capture thread time to initialize
-    print("Waiting for first frames...")
-    time.sleep(5)
-
-    try:
-        app.run(debug=True, threaded=True, host="0.0.0.0", port=5000)
-    except KeyboardInterrupt:
-        print("\nShutting down application...")
-    except Exception as e:
-        print(f"Flask error: {e}")
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=5000,
+        log_level="info",
+        timeout_keep_alive=300,
+        access_log=True
+    )

@@ -8,21 +8,20 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from ollama import AsyncClient
 from pydantic import BaseModel
-from utils.db import get_traffic_analytics
+from utils.db.stats_db import get_traffic_analytics
 from utils.holidays import holiday_checker
-from utils.llm_output_formatter import (
-    clean_text_remove_think_tags,
-    create_pdf_from_text,
-    get_cleaned_text_only,
-)
+from utils.report_format import ModernPDFGenerator
 from utils.whatsapp import whatsapp_messenger
 from decimal import Decimal
 from utils.camera_stats import CameraStats
-
+from utils.db.base import Base, Session
+import re
 # Getting the current date
 today = date.today()
 target_date = datetime(today.year, today.month, today.day)
 
+# Create PDF generator object
+pdf_generator = ModernPDFGenerator()
 
 app = FastAPI(title="Foot Traffic Analytics API")
 llm_model_id: str = "qwen3:0.6b"
@@ -234,6 +233,9 @@ def calculate_traffic_statistics(sql_results: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def get_correlation_strength(correlation: float) -> str:
+    if correlation is None:
+        return "no correlation"  # or whatever makes sense for your use case
+
     """Categorize correlation strength"""
     abs_corr = abs(correlation)
     if abs_corr >= 0.7:
@@ -541,7 +543,68 @@ def create_recommendations(
 
     return recommendations
 
+SYSTEM_PROMPT = """You are a foot traffic analytics specialist. Analyze the provided foot traffic data and building statistics to create a comprehensive view on the data.
+Use the provided statistics, insights, and recommendations as a foundation, but add your own analytical perspective. Present findings in clear, professional jargon suitable for building managers and business stakeholders.
+Focus on actionable insights that can improve operations, enhance visitor experience, and optimize resource allocation."""
 
+messages = [
+    {"role": "system", "content": SYSTEM_PROMPT},]
+
+# Get LLM analysis
+async def gen_response(messages:dict):
+    return await ollama_client.chat(
+    model=llm_model_id,
+    messages=messages,
+    options={
+        "temperature": 0.3,
+        "max_tokens": 1000,
+    },
+)
+
+
+def clean_formatting_issues(text):
+    """Clean up various formatting issues in the text."""
+
+    # Remove random characters that appear to be formatting artifacts
+    text = re.sub(r"^[X\-d;y�Hl]+\s*-\s*", "- ", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[X\-d;y�Hl]+\s*", "", text, flags=re.MULTILINE)
+
+    # Clean up bullet points
+    text = re.sub(r"\s*-\s*\*\*([^*]+)\*\*:\s*", r"\n\n**\1:**\n", text)
+    text = re.sub(r"\s*-\s*([^-\n]+)", r"\n- \1", text)
+
+    # Fix section headers
+    text = re.sub(r"\*\*(\d+\.\s*[^*]+)\*\*", r"\n\n**\1**\n", text)
+
+    # Clean up excessive spacing
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"^\s+", "", text, flags=re.MULTILINE)
+
+    # Fix punctuation spacing
+    text = re.sub(r"\.([A-Z])", r". \1", text)
+
+    return text.strip()
+
+def clean_text_remove_think_tags(text):
+    """
+    Remove <think> tags and their contents from text, then clean formatting.
+
+    Args:
+        text (str): Raw text with <think> tags
+
+    Returns:
+        str: Cleaned text without <think> content
+    """
+    # Remove <think> tags and everything between them
+    cleaned_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+
+    # Clean up extra whitespace and formatting issues
+    cleaned_text = re.sub(r"\s+", " ", cleaned_text.strip())
+
+    # Fix common formatting issues
+    cleaned_text = clean_formatting_issues(cleaned_text)
+
+    return cleaned_text
 @logger.catch
 @app.post("/analyse")
 async def analyze_foot_traffic(request: AnalysisRequest):
@@ -577,47 +640,21 @@ async def analyze_foot_traffic(request: AnalysisRequest):
             "data_points": len(request.traffic_data),
         }
 
-        # Create system prompt for LLM
-        SYSTEM_PROMPT = """You are a foot traffic analytics specialist. Analyze the provided foot traffic data and building statistics to create a comprehensive report.
-
-Your analysis should include:
-1. Executive Summary
-2. Key Findings
-3. Traffic Patterns Analysis
-4. Operational Insights
-5. Strategic Recommendations
-6. Risk Assessment (if applicable)
-
-Use the provided statistics, insights, and recommendations as a foundation, but add your own analytical perspective. Present findings in a clear, professional format suitable for building managers and business stakeholders.
-
-Focus on actionable insights thvercelat can improve operations, enhance visitor experience, and optimize resource allocation."""
-
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+        messages.append(
             {
                 "role": "user",
-                "content": f"""Please analyze this foot traffic data and create a comprehensive report:
+                "content": f"""Analyse the foot traffic data below and give recommendations  for serviced apartments in prose form. Focus on client satisfaction, trends, safety:
 
 ANALYSIS CONTEXT:
 {json.dumps(analysis_context, indent=2, default=str), sql_daily_results}
 
 ANALYSIS PERIOD: {request.analysis_period}
 BUILDING TYPE: {request.building_stats.building_type if request.building_stats else "Not specified"}
-
-Generate a detailed analytical report with specific recommendations for improving foot traffic management and building operations.""",
-            },
-        ]
-
-        # Get LLM analysis
-        response = await ollama_client.chat(
-            model=llm_model_id,
-            messages=messages,
-            options={
-                "temperature": 0.3,
-                "max_tokens": 1000,
+ """,
             },
         )
 
+        response=await gen_response(messages)
         # Extract response content
         if "message" in response and "content" in response["message"]:
             llm_report = response["message"]["content"]
@@ -637,15 +674,16 @@ Generate a detailed analytical report with specific recommendations for improvin
             "raw_statistics": stats,
             "key_insights": insights,
             "recommendations": recommendations,
-            "detailed_report": llm_report,
+            "detailed_report": clean_text_remove_think_tags(llm_report),
             "analysis_metadata": {
                 "generated_at": datetime.now().isoformat(),
                 "model_used": llm_model_id,
                 "include_predictions": request.include_predictions,
             },
         }
-        create_pdf_from_text(clean_text_remove_think_tags(llm_report))
-
+          # Generate PDF
+        output_file = pdf_generator.generate_pdf(analysis_result, f"./utils/reports/Traffic_report_{today}.pdf")
+    
         # whatsapp_messenger("Analysis complete")
 
         return JSONResponse(status_code=200, content=analysis_result)
@@ -682,7 +720,6 @@ async def health_check():
         "service": "Foot Traffic Analytics API",
         "timestamp": datetime.now().isoformat(),
     }
-
 
 @app.get("/")
 async def root():

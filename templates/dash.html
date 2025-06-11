@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foot Traffic Analysis Dashboard</title>
+    <link rel="stylesheet" href="./dash.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Foot Traffic Analysis Dashboard</h1>
+            <p>Comprehensive overview of visitor patterns and trends</p>
+        </header>
+
+        <div class="dashboard-grid">
+            <div class="card stat-card">
+                <div class="stat-label">Total Traffic</div>
+                <div class="stat-value" id="total-traffic">74</div>
+                <div class="stat-description">across all locations</div>
+            </div>
+
+            <div class="card stat-card">
+                <div class="stat-label">Average Traffic</div>
+                <div class="stat-value" id="avg-traffic">7.4</div>
+                <div class="stat-description">per time period</div>
+            </div>
+
+            <div class="card stat-card highlight-card">
+                <div class="stat-label">Peak Hour</div>
+                <div class="stat-value" id="peak-hour">9</div>
+                <div class="stat-description">at <span id="peak-location">lobby</span> (19 visitors)</div>
+            </div>
+
+            <div class="card stat-card">
+                <div class="stat-label">Unique Locations</div>
+                <div class="stat-value" id="unique-locations">10</div>
+                <div class="stat-description">monitored</div>
+            </div>
+        </div>
+
+        <!-- More HTML content for other sections -->
+
+        <script>
+            // This would be populated from your FastAPI response
+            const trafficData = {
+                total_traffic: 74,
+                average_traffic: 7.4,
+                max_traffic: 19,
+                data_points: 10,
+                median_traffic: 6.5,
+                min_traffic: 1,
+                std_deviation: 5.358275012642698,
+                // ... rest of your data object
+            };
+
+            // Example of how to populate the data
+            document.addEventListener('DOMContentLoaded', function() {
+                document.getElementById('total-traffic').textContent = trafficData.total_traffic;
+                document.getElementById('avg-traffic').textContent = trafficData.average_traffic;
+                document.getElementById('peak-hour').textContent = trafficData.peak_hour.hour;
+                document.getElementById('peak-location').textContent = trafficData.peak_hour.location;
+                document.getElementById('unique-locations').textContent = trafficData.unique_locations;
+                // ... populate other elements
+            });
+        </script>
+    </div>
+</body>
+</html>

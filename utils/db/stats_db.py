@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, Integer, String, DateTime, Numeric, Boolean
@@ -7,23 +7,10 @@ import os
 from loguru import logger
 from typing import Any
 from datetime import datetime
-
+from utils.db.base import Base, Session, execute_query
 # Define logger path
 logger.add("./logs/db.log", rotation="700 MB")
 load_dotenv()
-
-
-def get_connection_string():
-    with open("/run/secrets/postgres_secrets", "r") as f:
-        password = f.read().strip()
-
-    return f"postgresql://{os.getenv('DB_USER', 'postgres')}:{password}@{os.getenv('DB_HOST', 'postgres')}:{os.getenv('DB_PORT', 5432)}/{os.getenv('DB_NAME', 'postgres')}"
-
-
-engine = create_engine(get_connection_string(), pool_pre_ping=True, pool_recycle=300)
-Session = sessionmaker(bind=engine)
-Base = declarative_base()
-
 
 class CameraTraffic(Base):
     __tablename__ = "camera_traffic"
@@ -37,19 +24,6 @@ class CameraTraffic(Base):
     temperature = Column(Numeric(5, 2))
     day_of_week = Column(String(10))
     is_holiday = Column(Boolean)
-
-
-def execute_query(query: str, params: dict) -> list:
-    """Execute a query and return results as list of dictionaries"""
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(text(query), params or {})
-            columns = result.keys()
-            return [dict(zip(columns, row)) for row in result.fetchall()]
-    except Exception as e:
-        logger.error(f"Query execution failed: {e}")
-        return []
-
 
 def get_traffic_by_date(target_date: Any) -> list:
     """Get all traffic records for a specific date - optimized query"""
