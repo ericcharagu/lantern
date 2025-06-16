@@ -1,8 +1,7 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from loguru import logger
-from typing import Any
 
-logger.add("./logs/holidays.log", rotation="700 MB")
+logger.add("./logs/holiday_checker.log", rotation="700 MB")
 
 
 def calculate_easter(year):
@@ -75,26 +74,29 @@ def get_kenyan_holidays(year=None):
 current_year = date.today().year
 holidays = get_kenyan_holidays(current_year)
 
+current_time_utc = datetime.now(timezone.utc)
+formatted_time = current_time_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-def holiday_checker(date_string: Any, holidays: dict = holidays):
+
+@logger.catch()
+def holiday_checker(
+    date_string: str = formatted_time, holidays: dict = holidays
+) -> bool:
     """
     Convert the string datetime into actual dates and check if date is in holiday list
     """
-    try:
-        logger.info(date_string)
-        # Parse ISO format (handles 'Z' timezone)
-        dt = datetime.fromisoformat(date_string.replace("Z", "+00:00"))
-        month = dt.strftime("%B")  # Full month name (e.g., "January")
-        day = dt.day
 
-        # Check if month exists in holidays
-        if month in holidays:
-            for holiday in holidays[month]:
-                if holiday["date"] == day:
-                    return True
-        return False
-    except ValueError as e:
-        logger.debug(e)
+    # Parse ISO format (handles 'Z' timezone)
+    dt = datetime.fromisoformat(date_string.replace("Z", "+00:00"))
+    month = dt.strftime("%B")  # Full month name (e.g., "January")
+    day = dt.day
+
+    # Check if month exists in holidays
+    if month in holidays:
+        for holiday in holidays[month]:
+            if holiday["date"] == day:
+                return True
+    return False
 
 
 """

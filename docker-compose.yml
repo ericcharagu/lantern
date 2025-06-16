@@ -21,6 +21,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      valkey:
+        condition: service_healthy
     volumes:
       - ./:/app
       - ./logs:/app/logs
@@ -39,7 +41,7 @@ services:
       - "--port"
       - "8000"
       - "--log-level"
-      - "info"
+      - "debug"
       - "--reload" # Remove in production
     ports:
       - "8000:8000"
@@ -92,6 +94,15 @@ services:
     networks:
       - llm_network
 
+  valkey:
+    image:  valkey/valkey:8.1-alpine
+    container_name: cache_server
+    ports:
+      - "6379:6379"
+    volumes:
+      - cache_data:/data
+    networks:
+      - llm_network
 networks:
   llm_network:
     driver: bridge
@@ -99,7 +110,12 @@ networks:
 volumes:
   ollama_data:
   postgres_data:
+  cache_data:
 
 secrets:
   postgres_secrets:
     file: ./secrets/postgres_secrets.txt
+  whatsapp_secrets:
+    file: ./secrets/whatsapp_secrets.txt
+  request_secrets:
+    file: ./secrets.request_secrets.txt

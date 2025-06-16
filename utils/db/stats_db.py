@@ -1,29 +1,13 @@
-from sqlalchemy import text
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, Numeric, Boolean
 from dotenv import load_dotenv
-import os
 from loguru import logger
 from typing import Any
 from datetime import datetime
-from utils.db.base import Base, Session, execute_query
+from utils.db.base import execute_query
+
 # Define logger path
 logger.add("./logs/db.log", rotation="700 MB")
 load_dotenv()
 
-class CameraTraffic(Base):
-    __tablename__ = "camera_traffic"
-    id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime(timezone=True))
-    camera_name = Column(String(50))
-    count = Column(Integer)
-    location = Column(String(50))
-    direction = Column(String(10))
-    weather = Column(String(20))
-    temperature = Column(Numeric(5, 2))
-    day_of_week = Column(String(10))
-    is_holiday = Column(Boolean)
 
 def get_traffic_by_date(target_date: Any) -> list:
     """Get all traffic records for a specific date - optimized query"""
@@ -34,8 +18,6 @@ def get_traffic_by_date(target_date: Any) -> list:
         count,
         location,
         direction,
-        weather,
-        temperature,
         day_of_week,
         is_holiday
     FROM camera_traffic
@@ -102,8 +84,6 @@ def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
                 count,
                 location,
                 direction,
-                weather,
-                temperature,
                 day_of_week,
                 is_holiday,
                 EXTRACT(HOUR FROM timestamp)::INTEGER AS hour
@@ -128,15 +108,7 @@ def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
             GROUP BY location, direction
             ORDER BY total DESC
         ),
-        weather_stats AS (
-            SELECT 
-                weather,
-                ROUND(AVG(count::NUMERIC), 2) AS avg_count,
-                SUM(count) AS total_count
-            FROM daily_stats
-            GROUP BY weather
-            ORDER BY total_count DESC
-        ),
+
         hourly_stats AS (
             SELECT 
                 hour,
@@ -157,12 +129,6 @@ def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
             ORDER BY total_count DESC
             LIMIT :top_n
         ),
-        correlation_data AS (
-            SELECT 
-                CORR(count, temperature) AS count_temp_correlation
-            FROM daily_stats
-            WHERE temperature IS NOT NULL
-        )
         SELECT 
             'basic_stats' AS query_type,
             json_agg(basic_stats.*) AS data
@@ -177,12 +143,7 @@ def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
         
         UNION ALL
         
-        SELECT 
-            'weather_impact_analysis' AS query_type,
-            json_agg(weather_stats.*) AS data
-        FROM weather_stats
-        
-        UNION ALL
+       
         
         SELECT 
             'hourly_aggregates' AS query_type,
@@ -196,12 +157,7 @@ def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
             json_agg(top_locations.*) AS data
         FROM top_locations
         
-        UNION ALL
-        
-        SELECT 
-            'temperature_correlation' AS query_type,
-            json_agg(correlation_data.*) AS data
-        FROM correlation_data;
+   
         """
 
         # Execute comprehensive query
@@ -216,8 +172,6 @@ def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
 
             if query_type == "basic_stats" and data:
                 results["daily_statistics"] = data[0]
-            elif query_type == "temperature_correlation" and data:
-                results["temperature_correlation"] = data[0]
             else:
                 results[query_type] = data if data else []
 
@@ -245,7 +199,6 @@ def get_traffic_summary(target_date: datetime) -> dict:
         MAX(count) AS peak_traffic,
         COUNT(DISTINCT location) AS unique_locations,
         COUNT(DISTINCT camera_name) AS active_cameras,
-        json_agg(DISTINCT weather) AS weather_conditions
     FROM camera_traffic
     WHERE DATE(timestamp) = :target_date;
     """

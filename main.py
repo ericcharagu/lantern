@@ -1,25 +1,39 @@
+import asyncio
 import json
-import statistics
-from datetime import datetime, date, timezone
-from typing import Dict, Optional, List, Any
-from fastapi import FastAPI, HTTPException
+import re
+import uuid
+from datetime import date, datetime, timezone
+from typing import Any, List, Optional, Dict
+
+from utils.db.base import MobileRequestLog, single_insert_query
+import valkey
+from dotenv import load_dotenv
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from loguru import logger
 from ollama import AsyncClient
-from pydantic import BaseModel
-from utils.db.stats_db import get_traffic_analytics
-from utils.holidays import holiday_checker
-from utils.report_format import ModernPDFGenerator
-from utils.whatsapp import whatsapp_messenger
-from decimal import Decimal
+from pydantic import BaseModel, Field
+
+from routers import auth, cameras
+from utils.app_tools import (
+    calculate_traffic_statistics,
+    create_recommendations,
+    generate_insights,
+)
 from utils.camera_stats import CameraStats
-from utils.db.base import Base, Session
-import re
+from utils.db.stats_db import get_traffic_analytics
+from utils.report_format import ModernPDFGenerator
+from utils.whatsapp.whatsapp import whatsapp_messenger
+
 # Getting the current date
 today = date.today()
 target_date = datetime(today.year, today.month, today.day)
 
+# load the current environment
+load_dotenv()
 # Create PDF generator object
 pdf_generator = ModernPDFGenerator()
 
@@ -35,9 +49,47 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Add middleware
+
+# app.middleware("http")(auth_middleware)
+
+# Include routers
+app.include_router(auth.router)
+app.include_router(cameras.router)
+# Mount static files
+app.mount("/static", StaticFiles(directory="./static"), name="static")
+
+
+# Simple HTML form for testing the API
+templates = Jinja2Templates(directory="templates")
+
+
+# Define request models
+class GenerationRequest(BaseModel):
+    prompt: str
+    prompt_timestamp: datetime = datetime.now(timezone.utc)
+    sender_profile_id: str
+    prompt_id: str
+
+
+class ConversationData(BaseModel):
+    user_message: Any
+    prompt_timestamp: datetime
+    llm_response: str
+    llm_response_timestamp: datetime
+    category: str
+    source: str
+    interaction_timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    prompt_id: uuid.UUID
+
 
 # Ollama client for LLM analysis
 ollama_client = AsyncClient(host="http://ollama:11434")
+
+# Valkey DB for fast data caching and request verification
+valkey_client = valkey.Valkey(host="localhost", port=6379, db=0, decode_responses=True)
 
 
 class FootTrafficData(BaseModel):
@@ -74,492 +126,126 @@ class AnalysisRequest(BaseModel):
     include_predictions: bool = False
 
 
-def calculate_traffic_statistics(sql_results: Dict[str, Any]) -> Dict[str, Any]:
-    """Calculate comprehensive statistics from SQL daily results"""
-    if not sql_results:
-        return {}
+SYSTEM_PROMPT = """You are a Foot Traffic Analytics Specialist for commercial real estate. Your task is to analyze provided foot traffic data and building statistics to generate actionable business intelligence. 
 
-    # Extract basic daily statistics
-    daily_stats = sql_results.get("daily_statistics", {})
-    location_analysis = sql_results.get("location_direction_analysis", [])
-    weather_analysis = sql_results.get("weather_impact_analysis", [])
-    hourly_data = sql_results.get("hourly_aggregates", [])
-    location_stats = sql_results.get("location_statistics", [])
-    temperature_correlation = sql_results.get("temperature_correlation", {})
-    raw_data = sql_results.get("daily_traffic_data", [])
+Key Responsibilitivide data-driven recommendations for service improvements
 
-    stats = {
-        # Core metrics from daily statistics
-        "total_traffic": daily_stats.get("total_count", 0),
-        "average_traffic": daily_stats.get("avg_count", 0),
-        "max_traffic": daily_stats.get("max_count", 0),
-        "data_points": daily_stats.get("record_count", 0),
-    }
+Analysis Framework:
+- Visitor Experience: Evaluate dwell times, peak congestion, amenity usage
+- Operational Efficiency: Assess staffing levels, cleaning schedules, energy usage
+- Safety Compliance: Monitor density metrics, emergency egress capacity
+- Revenue Optimization: Suggest space utilization improvements
 
-    # Calculate additional statistics from raw data if available
-    if raw_data:
-        counts = [item["count"] for item in raw_data]
-        if len(counts) > 1:
-            stats["median_traffic"] = statistics.median(counts)
-            stats["min_traffic"] = min(counts)
-            stats["std_deviation"] = statistics.stdev(counts)
-        else:
-            stats["median_traffic"] = counts[0] if counts else 0
-            stats["min_traffic"] = counts[0] if counts else 0
-            stats["std_deviation"] = 0
+Deliverables Must Be in prose form but allowed usage of bullet points:
+1. Executive Summary Paragraph (max 2)
+2. Trend Analysis with Visual Descriptions
+3. Priority Recommendations (categorized by impact/effort)
+4. Risk Assessment (safety/capacity concerns)
 
-    # Location and direction breakdown
-    if location_analysis:
-        stats["location_breakdown"] = {}
-        stats["direction_analysis"] = {}
+Tone: Professional yet accessible for mixed audiences (technical ops staff + executive leadership)
+"""
 
-        for item in location_analysis:
-            location = item["location"]
-            direction = item["direction"]
-
-            # Location stats
-            if location not in stats["location_breakdown"]:
-                stats["location_breakdown"][location] = {"total": 0, "directions": {}}
-
-            stats["location_breakdown"][location]["total"] += item["total"]
-            stats["location_breakdown"][location]["directions"][direction] = {
-                "total": item["total"],
-                "average": item["average"],
-            }
-
-            # Direction stats
-            if direction not in stats["direction_analysis"]:
-                stats["direction_analysis"][direction] = {"total": 0, "locations": []}
-            stats["direction_analysis"][direction]["total"] += item["total"]
-            stats["direction_analysis"][direction]["locations"].append(
-                {"location": location, "count": item["total"]}
-            )
-
-    # Weather impact analysis
-    if weather_analysis:
-        stats["weather_impact"] = {}
-        for weather_item in weather_analysis:
-            weather = weather_item["weather"]
-            stats["weather_impact"][weather] = {
-                "total_count": weather_item["total_count"],
-                "average_count": weather_item["avg_count"],
-            }
-
-        # Find best and worst weather conditions
-        best_weather = max(weather_analysis, key=lambda x: x["avg_count"])
-        worst_weather = min(weather_analysis, key=lambda x: x["avg_count"])
-
-        stats["weather_insights"] = {
-            "best_conditions": {
-                "weather": best_weather["weather"],
-                "avg_count": best_weather["avg_count"],
-            },
-            "worst_conditions": {
-                "weather": worst_weather["weather"],
-                "avg_count": worst_weather["avg_count"],
-            },
-        }
-
-    # Hourly patterns
-    if hourly_data:
-        stats["hourly_patterns"] = {}
-        for hour_item in hourly_data:
-            hour = hour_item["hour"]
-            stats["hourly_patterns"][hour] = {
-                "location": hour_item["location"],
-                "total_count": hour_item["total_count"],
-            }
-
-        # Find peak hour
-        peak_hour_data = max(hourly_data, key=lambda x: x["total_count"])
-        stats["peak_hour"] = {
-            "hour": peak_hour_data["hour"],
-            "location": peak_hour_data["location"],
-            "traffic_count": peak_hour_data["total_count"],
-        }
-
-        # Find quiet hour
-        quiet_hour_data = min(hourly_data, key=lambda x: x["total_count"])
-        stats["quiet_hour"] = {
-            "hour": quiet_hour_data["hour"],
-            "location": quiet_hour_data["location"],
-            "traffic_count": quiet_hour_data["total_count"],
-        }
-
-    # Location performance ranking
-    if location_stats:
-        stats["location_ranking"] = []
-        for loc_stat in location_stats:
-            stats["location_ranking"].append(
-                {
-                    "location": loc_stat["location"],
-                    "total_count": loc_stat["total_count"],
-                    "avg_count": loc_stat["avg_count"],
-                    "max_count": loc_stat["max_count"],
-                }
-            )
-
-        # Sort by total count
-        stats["location_ranking"].sort(key=lambda x: x["total_count"], reverse=True)
-
-        # Calculate location utilization distribution
-        total_all_locations = sum(loc["total_count"] for loc in location_stats)
-        if total_all_locations > 0:
-            stats["location_distribution"] = {
-                loc["location"]: round(
-                    (loc["total_count"] / total_all_locations) * 100, 2
-                )
-                for loc in location_stats
-            }
-
-    # Temperature correlation
-    if temperature_correlation:
-        correlation_value = temperature_correlation.get("count_temp_correlation", 0)
-        stats["temperature_correlation"] = {
-            "correlation_coefficient": correlation_value,
-            "correlation_strength": get_correlation_strength(correlation_value),
-        }
-
-    # Calculate unique metrics
-    if location_analysis:
-        stats["unique_locations"] = len(
-            set(item["location"] for item in location_analysis)
-        )
-        stats["unique_directions"] = len(
-            set(item["direction"] for item in location_analysis)
-        )
-
-    return stats
-
-
-def get_correlation_strength(correlation: float) -> str:
-    if correlation is None:
-        return "no correlation"  # or whatever makes sense for your use case
-
-    """Categorize correlation strength"""
-    abs_corr = abs(correlation)
-    if abs_corr >= 0.7:
-        return "Strong"
-    elif abs_corr >= 0.5:
-        return "Moderate"
-    elif abs_corr >= 0.3:
-        return "Weak"
-    else:
-        return "Very Weak"
-
-
-def generate_insights(
-    stats: Dict[str, Any], building_stats: Optional[Any] = None
-) -> List[str]:
-    """Generate business insights from SQL-based traffic statistics"""
-    insights = []
-
-    if not stats:
-        return ["No data available for analysis"]
-
-    # Overall traffic insights
-    total_traffic = stats.get("total_traffic", 0)
-    avg_traffic = stats.get("average_traffic", 0)
-    max_traffic = stats.get("max_traffic", 0)
-    data_points = stats.get("data_points", 0)
-
-    if total_traffic > 0:
-        insights.append(
-            f"📊 Total foot traffic recorded: {total_traffic:,} people across {data_points} measurement points"
-        )
-        insights.append(f"📈 Average traffic per location: {avg_traffic:.1f} people")
-        insights.append(f"🔝 Peak single location traffic: {max_traffic} people")
-
-    # Peak hour insights
-    if "peak_hour" in stats:
-        peak_info = stats["peak_hour"]
-        hour = peak_info["hour"]
-        location = peak_info["location"]
-        count = peak_info["traffic_count"]
-        time_period = f"{hour:02d}:00-{(hour + 1):02d}:00"
-        insights.append(
-            f"⏰ Peak activity occurs at {time_period} at {location} with {count} people"
-        )
-
-    # Quiet hour insights
-    if "quiet_hour" in stats:
-        quiet_info = stats["quiet_hour"]
-        hour = quiet_info["hour"]
-        location = quiet_info["location"]
-        count = quiet_info["traffic_count"]
-        time_period = f"{hour:02d}:00-{(hour + 1):02d}:00"
-        insights.append(
-            f"🔽 Lowest activity at {time_period} at {location} with {count} people"
-        )
-
-    # Location performance insights
-    if "location_ranking" in stats and stats["location_ranking"]:
-        top_location = stats["location_ranking"][0]
-        bottom_location = stats["location_ranking"][-1]
-
-        insights.append(
-            f"🏆 Busiest location: {top_location['location']} ({top_location['total_count']} total visitors)"
-        )
-        insights.append(
-            f"📍 Least busy location: {bottom_location['location']} ({bottom_location['total_count']} total visitors)"
-        )
-
-        # Location distribution insight
-        if "location_distribution" in stats:
-            top_percentage = max(stats["location_distribution"].values())
-            if top_percentage > 40:
-                insights.append(
-                    f"⚠️ Traffic concentration: {top_percentage}% of all traffic flows through the busiest location"
-                )
-
-    # Direction flow insights
-    if "direction_analysis" in stats:
-        direction_stats = stats["direction_analysis"]
-        if "entry" in direction_stats and "exit" in direction_stats:
-            entry_total = direction_stats["entry"]["total"]
-            exit_total = direction_stats["exit"]["total"]
-            flow_balance = (
-                abs(entry_total - exit_total) / max(entry_total, exit_total) * 100
-            )
-
-            if flow_balance < 10:
-                insights.append("⚖️ Well-balanced entry/exit flow patterns observed")
-            elif entry_total > exit_total:
-                insights.append(
-                    f"📥 Higher entry traffic ({entry_total}) vs exit traffic ({exit_total}) - {flow_balance:.1f}% imbalance"
-                )
-            else:
-                insights.append(
-                    f"📤 Higher exit traffic ({exit_total}) vs entry traffic ({entry_total}) - {flow_balance:.1f}% imbalance"
-                )
-
-    # Weather impact insights
-    if "weather_insights" in stats:
-        weather_info = stats["weather_insights"]
-        best_weather = weather_info["best_conditions"]
-        worst_weather = weather_info["worst_conditions"]
-
-        insights.append(
-            f"☀️ Best weather for foot traffic: {best_weather['weather']} (avg: {best_weather['avg_count']:.1f} people)"
-        )
-        insights.append(
-            f"🌧️ Challenging weather conditions: {worst_weather['weather']} (avg: {worst_weather['avg_count']:.1f} people)"
-        )
-
-    # Temperature correlation insights
-    if "temperature_correlation" in stats:
-        temp_corr = stats["temperature_correlation"]
-        correlation = temp_corr["correlation_coefficient"]
-        strength = temp_corr["correlation_strength"]
-
-        if correlation > 0.5:
-            insights.append(
-                f"🌡️ {strength} positive correlation between temperature and foot traffic ({correlation:.2f})"
-            )
-        elif correlation < -0.5:
-            insights.append(
-                f"🌡️ {strength} negative correlation between temperature and foot traffic ({correlation:.2f})"
-            )
-        else:
-            insights.append(
-                f"🌡️ {strength} temperature correlation with foot traffic ({correlation:.2f})"
-            )
-
-    # Capacity utilization insights (if building stats provided)
-    if (
-        building_stats
-        and hasattr(building_stats, "capacity")
-        and building_stats.capacity
-    ):
-        utilization = (max_traffic / building_stats.capacity) * 100
-        insights.append(
-            f"🏢 Peak capacity utilization: {utilization:.1f}% ({max_traffic}/{building_stats.capacity})"
-        )
-
-        if utilization > 80:
-            insights.append(
-                "⚠️ High capacity utilization - consider crowd management strategies"
-            )
-        elif utilization < 30:
-            insights.append(
-                "💡 Low capacity utilization - opportunity for increased marketing or events"
-            )
-
-    # Traffic variability insights
-    if "std_deviation" in stats and avg_traffic > 0:
-        cv = stats["std_deviation"] / avg_traffic
-        if cv > 0.5:
-            insights.append(
-                "📊 High traffic variability - consider analyzing patterns for predictable operations"
-            )
-        elif cv < 0.2:
-            insights.append(
-                "📊 Consistent traffic patterns - good for predictable resource planning"
-            )
-
-    return insights
-
-
-def create_recommendations(
-    stats: Dict[str, Any], building_stats: Optional[Any] = None
-) -> List[str]:
-    """Generate actionable recommendations based on SQL analysis"""
-    recommendations = []
-
-    if not stats:
-        return ["Insufficient data for recommendations"]
-
-    # Peak hour staffing recommendations
-    if "peak_hour" in stats:
-        peak_hour = stats["peak_hour"]["hour"]
-        peak_location = stats["peak_hour"]["location"]
-
-        if 6 <= peak_hour <= 9:
-            recommendations.append(
-                f"🌅 Morning rush preparation: Increase staffing at {peak_location} between {peak_hour:02d}:00-{(peak_hour + 2):02d}:00"
-            )
-        elif 11 <= peak_hour <= 14:
-            recommendations.append(
-                f"🍽️ Lunch hour optimization: Deploy additional resources at {peak_location} during midday peak"
-            )
-        elif 17 <= peak_hour <= 20:
-            recommendations.append(
-                f"🌆 Evening rush management: Prepare for high traffic at {peak_location} during evening hours"
-            )
-
-        recommendations.append(
-            f"📍 Focus operational excellence efforts on {peak_location} during peak hours"
-        )
-
-    # Location-based recommendations
-    if "location_ranking" in stats and len(stats["location_ranking"]) > 1:
-        top_location = stats["location_ranking"][0]
-        bottom_locations = stats["location_ranking"][-2:]  # Bottom 2 locations
-
-        # Traffic redistribution
-        if top_location["total_count"] > sum(
-            loc["total_count"] for loc in bottom_locations
-        ):
-            recommendations.append(
-                f"🔄 Redistribute traffic from {top_location['location']} to underutilized areas"
-            )
-            recommendations.append(
-                "🚪 Improve signage and wayfinding to promote alternative entry/exit points"
-            )
-
-        # Underutilized space optimization
-        for location in bottom_locations:
-            if location["total_count"] < stats["average_traffic"] * 0.5:
-                recommendations.append(
-                    f"💡 Optimize {location['location']} utilization through targeted marketing or service relocation"
-                )
-
-    # Flow balance recommendations
-    if "direction_analysis" in stats:
-        direction_stats = stats["direction_analysis"]
-        if "entry" in direction_stats and "exit" in direction_stats:
-            entry_total = direction_stats["entry"]["total"]
-            exit_total = direction_stats["exit"]["total"]
-
-            if abs(entry_total - exit_total) / max(entry_total, exit_total) > 0.2:
-                recommendations.append(
-                    "⚖️ Investigate entry/exit flow imbalance - consider additional exit points or flow management"
-                )
-
-    # Weather-based operational recommendations
-    if "weather_insights" in stats:
-        weather_info = stats["weather_insights"]
-        best_weather = weather_info["best_conditions"]["weather"]
-        worst_weather = weather_info["worst_conditions"]["weather"]
-
-        recommendations.append(
-            f"☀️ Plan special events and promotions during {best_weather} weather conditions"
-        )
-        recommendations.append(
-            f"🌧️ Develop contingency plans for {worst_weather} weather to maintain service levels"
-        )
-
-    # Temperature-based recommendations
-    if "temperature_correlation" in stats:
-        correlation = stats["temperature_correlation"]["correlation_coefficient"]
-        if abs(correlation) > 0.5:
-            if correlation > 0:
-                recommendations.append(
-                    "🌡️ Consider climate control and comfort measures during warmer periods"
-                )
-            else:
-                recommendations.append(
-                    "🌡️ Implement warming stations or comfort measures during cooler periods"
-                )
-
-    # Maintenance and operational timing
-    if "quiet_hour" in stats:
-        quiet_hour = stats["quiet_hour"]["hour"]
-        quiet_location = stats["quiet_hour"]["location"]
-        recommendations.append(
-            f"🔧 Schedule maintenance activities during low-traffic period: {quiet_hour:02d}:00-{(quiet_hour + 1):02d}:00 at {quiet_location}"
-        )
-
-    # Capacity and infrastructure recommendations
-    if (
-        building_stats
-        and hasattr(building_stats, "capacity")
-        and building_stats.capacity
-    ):
-        max_traffic = stats.get("max_traffic", 0)
-        utilization = (max_traffic / building_stats.capacity) * 100
-
-        if utilization > 85:
-            recommendations.append(
-                "🏗️ Consider capacity expansion or queue management systems"
-            )
-            recommendations.append(
-                "📱 Implement real-time occupancy monitoring and communication"
-            )
-        elif utilization < 25:
-            recommendations.append(
-                "💰 Evaluate space optimization opportunities or revenue-generating activities"
-            )
-
-    # Data collection and monitoring improvements
-    data_points = stats.get("data_points", 0)
-    if data_points < 20:
-        recommendations.append(
-            "📊 Increase monitoring frequency for more granular traffic analysis"
-        )
-
-    if "unique_locations" in stats and stats["unique_locations"] < 5:
-        recommendations.append(
-            "📍 Consider adding monitoring points at additional strategic locations"
-        )
-
-    # Operational efficiency recommendations
-    if "location_distribution" in stats:
-        max_concentration = max(stats["location_distribution"].values())
-        if max_concentration > 50:
-            recommendations.append(
-                "🚦 Implement traffic flow management systems to reduce bottlenecks"
-            )
-
-    return recommendations
-
-SYSTEM_PROMPT = """You are a foot traffic analytics specialist. Analyze the provided foot traffic data and building statistics to create a comprehensive view on the data.
-Use the provided statistics, insights, and recommendations as a foundation, but add your own analytical perspective. Present findings in clear, professional jargon suitable for building managers and business stakeholders.
-Focus on actionable insights that can improve operations, enhance visitor experience, and optimize resource allocation."""
-
-messages = [
-    {"role": "system", "content": SYSTEM_PROMPT},]
 
 # Get LLM analysis
-async def gen_response(messages:dict):
+async def gen_response(messages: list[dict]):
     return await ollama_client.chat(
-    model=llm_model_id,
-    messages=messages,
-    options={
-        "temperature": 0.3,
-        "max_tokens": 1000,
-    },
-)
+        model=llm_model_id,
+        messages=messages,
+        options={
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0,
+            "temperature": 0.6,
+            # "max_tokens": 1000,
+        },
+    )
+
+
+async def process_request(
+    mobile_request: GenerationRequest, messages: List
+) -> Dict[str, Any]:
+    """
+    Process a mobile request with request ID, timestamp, and deduplication.
+
+    Args:
+        mobile_request: Dictionary containing 'prompt' and 'prompt_timestamp'
+
+    Returns:
+        Dictionary with response and metadata
+    """
+    # Generate unique request ID
+    request_id = str(uuid.uuid4())
+    timestamp = datetime.now(timezone.utc)
+
+    # Create request payload
+    request_payload = {
+        "request_id": request_id,
+        "client_timestamp": mobile_request.prompt_timestamp,
+        "server_timestamp": timestamp,
+        "prompt": mobile_request.prompt,
+        "status": "received",
+    }
+
+    # Check for duplicate request using prompt content hash as key
+    prompt_hash = str(hash(mobile_request.prompt))
+    cached_response = valkey_client.get(f"request:{prompt_hash}")
+
+    if cached_response:
+        # Return cached response
+        response = json.loads(cached_response)
+        response["status"] = "served_from_cache"
+        return response
+
+    # Store request in cache with processing status
+    request_payload["status"] = "processing"
+    valkey_client.setex(
+        f"request:{prompt_hash}",
+        3600,  # 1 hour TTL
+        json.dumps(request_payload),
+    )
+
+    try:
+        # Process with Ollama
+        ollama_response = await gen_response(messages)
+
+        # Prepare complete response
+        response = {
+            "request_id": request_id,
+            "client_timestamp": mobile_request.prompt_timestamp,
+            "server_timestamp": timestamp,
+            "prompt": mobile_request.prompt,
+            "response": ollama_response.get("message", {}).get("content", ""),
+            "status": "completed",
+            "metrics": {"response_time": ollama_response.get("total_duration", 0)},
+        }
+
+        # Update cache with full response
+        valkey_client.setex(
+            f"request:{prompt_hash}",
+            3600,  # 1 hour TTL
+            json.dumps(response),
+        )
+
+        return response
+
+    except Exception as e:
+        # Update with error status
+        error_response = {
+            "request_id": request_id,
+            "client_timestamp": mobile_request.prompt_timestamp,
+            "server_timestamp": timestamp,
+            "prompt": mobile_request.prompt,
+            "status": "error",
+            "error": str(e),
+        }
+
+        valkey_client.setex(
+            f"request:{prompt_hash}",
+            600,  # 10 minutes TTL for errors
+            json.dumps(error_response),
+        )
+
+        return error_response
 
 
 def clean_formatting_issues(text):
@@ -585,6 +271,7 @@ def clean_formatting_issues(text):
 
     return text.strip()
 
+
 def clean_text_remove_think_tags(text):
     """
     Remove <think> tags and their contents from text, then clean formatting.
@@ -605,6 +292,8 @@ def clean_text_remove_think_tags(text):
     cleaned_text = clean_formatting_issues(cleaned_text)
 
     return cleaned_text
+
+
 @logger.catch
 @app.post("/analyse")
 async def analyze_foot_traffic(request: AnalysisRequest):
@@ -614,9 +303,7 @@ async def analyze_foot_traffic(request: AnalysisRequest):
         sql_daily_results = get_traffic_analytics(today)
         # Calculate statistics
         stats = calculate_traffic_statistics(sql_daily_results)
-        current_time_utc = datetime.now(timezone.utc)
-        formatted_time = current_time_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-        logger.info(holiday_checker(formatted_time))
+
         logger.info(stats)
         # Generate insights and recommendations
         insights = generate_insights(stats, request.building_stats)
@@ -634,16 +321,21 @@ async def analyze_foot_traffic(request: AnalysisRequest):
             "statistics": stats,
             "insights": insights,
             "recommendations": recommendations,
-            "building_info": request.building_stats.dict()
+            "building_info": request.building_stats.model_dump()
             if request.building_stats
             else None,
             "data_points": len(request.traffic_data),
         }
 
-        messages.append(
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": f"""Analyse the foot traffic data below and give recommendations  for serviced apartments in prose form. Focus on client satisfaction, trends, safety:
+                "content": f"""Analyze the following serviced apartment foot traffic data with focus on:
+- Client satisfaction indicators (dwell time, repeat visits)
+- Operational trends (staffing adequacy, cleaning efficiency)
+e Safety compliance (maximum occupancy events, emergency preparedness)
+
 
 ANALYSIS CONTEXT:
 {json.dumps(analysis_context, indent=2, default=str), sql_daily_results}
@@ -652,9 +344,9 @@ ANALYSIS PERIOD: {request.analysis_period}
 BUILDING TYPE: {request.building_stats.building_type if request.building_stats else "Not specified"}
  """,
             },
-        )
+        ]
 
-        response=await gen_response(messages)
+        response = await gen_response(messages)
         # Extract response content
         if "message" in response and "content" in response["message"]:
             llm_report = response["message"]["content"]
@@ -676,15 +368,17 @@ BUILDING TYPE: {request.building_stats.building_type if request.building_stats e
             "recommendations": recommendations,
             "detailed_report": clean_text_remove_think_tags(llm_report),
             "analysis_metadata": {
-                "generated_at": datetime.now().isoformat(),
+                "generated_at": datetime.now(timezone.utc),
                 "model_used": llm_model_id,
                 "include_predictions": request.include_predictions,
             },
         }
-          # Generate PDF
-        output_file = pdf_generator.generate_pdf(analysis_result, f"./utils/reports/Traffic_report_{today}.pdf")
-    
-        # whatsapp_messenger("Analysis complete")
+        # Generate PDF
+        output_file = pdf_generator.generate_pdf(
+            analysis_result, f"./utils/reports/Traffic_report_{today}.pdf"
+        )
+
+        # whatsapp_messenger(output_file)
 
         return JSONResponse(status_code=200, content=analysis_result)
 
@@ -693,47 +387,107 @@ BUILDING TYPE: {request.building_stats.building_type if request.building_stats e
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
-@app.post("/quick-stats")
-async def get_quick_stats(traffic_data: Any):
-    """Endpoint for quick statistical overview without LLM analysis"""
-    try:
-        stats = calculate_traffic_statistics(traffic_data)
-        insights = generate_insights(stats)
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "statistics": stats,
-                "quick_insights": insights,
-                "generated_at": datetime.now().isoformat(),
-            },
-        )
-    except ValueError as e:
-        logger.debug(f"Quick stats error: {str(e)}")
-
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
         "service": "Foot Traffic Analytics API",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
+
+# Whatsapp messaging endpoint
+with open("/app/secrets/postgres_secrets.txt", "r") as f:
+    WHATSAPP_VERIFCATION_TOKEN = f.read().strip()
+
+
+@app.api_route("/webhooks", methods=["GET", "POST"])
+async def handle_whatsapp(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    # GET parameters for webhook verification
+    hub_mode: Optional[str] = Query(None, alias="hub.mode"),
+    hub_verify_token: Optional[str] = Query(None, alias="hub.verify_token"),
+    hub_challenge: Optional[str] = Query(None, alias="hub.challenge"),
+):
+    if request.method == "GET":
+        # WhatsApp webhook verification
+        if hub_mode and hub_verify_token:
+            if (
+                hub_mode == "subscribe"
+                and hub_verify_token == WHATSAPP_VERIFCATION_TOKEN
+            ):
+                return PlainTextResponse(content=hub_challenge, status_code=200)
+            else:
+                raise HTTPException(status_code=403, detail="Verification failed")
+        else:
+            raise HTTPException(status_code=400, detail="Missing parameters")
+
+    elif request.method == "POST":
+        # Verify the signature if needed (commented out like in original)
+        """
+        signature = request.headers.get("x-hub-signature-256", "").split("sha256=")[-1].strip()
+        if not verify_signature(await request.body(), signature):
+            raise HTTPException(status_code=403, detail="Invalid signature")
+        """
+
+        try:
+            # Get JSON data from request
+            data = await request.json()
+
+            if not data:
+                raise HTTPException(status_code=400, detail="Empty payload")
+
+            print("Received data:", data)  # For debugging
+
+            # Extract message information and return as dict
+            entries = data.get("entry", [])
+            test_message = {
+                "prompt": "",
+                "prompt_timestamp": datetime.now(timezone.utc),
+            }
+
+            for entry in entries:
+                changes = entry.get("changes", [])
+                for change in changes:
+                    value = change.get("value", {})
+                    messages = value.get("messages", [])
+
+                    for message in messages:
+                        if message.get("type") == "text":
+                            message_info = {
+                                "sender_profile_id": message.get("from"),
+                                "prompt": message.get("text").get("body", " "),
+                                "message_id": message.get("id"),
+                                "prompt_timestamp": message.get("timestamp"),
+                            }
+                            test_message.update(message_info)
+            mobile_request = GenerationRequest(**test_message)
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": mobile_request.prompt},
+            ]
+            # Generate request to ollama client with unique request ID to avoid reprocessing
+            response_json = await process_request(
+                mobile_request=mobile_request, messages=messages
+            )
+            whatsapp_messenger(response_json.get("response", "No response generated"))
+            # Log the interaction
+            await single_insert_query(MobileRequestLog, response_json)
+
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON payload")
+        except ValueError as e:
+            print(f"Error processing request: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
-async def root():
+async def root(request: Request):
     """Root endpoint with API information"""
-    return {
-        "service": "Foot Traffic Analytics API",
-        "version": "1.0.0",
-        "endpoints": {
-            "analyse": "POST /analyse - Comprehensive foot traffic analysis",
-            "quick-stats": "POST /quick-stats - Quick statistical overview",
-            "health": "GET /health - Health check",
-        },
-        "description": "API for analyzing foot traffic data and generating insights for building management",
-    }
+    return {"request_id": request.state.request_id}
+    # return templates.TemplateResponse("dash.html", {"request": request})
 
 
 """

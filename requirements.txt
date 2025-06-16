@@ -21,3 +21,5 @@ python-jose[cryptography]
 passlib
 bcrypt
 pydantic[email]
+valkey[libvalkey]
+pytest
