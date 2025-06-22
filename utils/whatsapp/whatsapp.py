@@ -1,14 +1,22 @@
 import requests
 from typing import Any
 from loguru import logger
+from dotenv import load_dotenv
+import os
 
+# Load the env
+load_dotenv()
 # Logger file path
 logger.add("./logs/whatsapp.log", rotation="700 MB")
 # Configuration
 API_VERSION = "v22.0"
-PHONE_NUMBER_ID = "605403165986839"
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+
+# TODO:To be moved to secrets duting prod and when permanent Token acquired
 ACCESS_TOKEN = "EAARQrAKzcHUBO5H9PNZBj0H6eV9ZBQU3PISb7ICTYh5ZBc7OacY1YdBpEzmPNlPitS3X57u0jXdE9uQ54RDmOyDGeiF5C1dWlS0HtF61GZCpGxhzW5YvXHJiMc3IOa7srZCHDWWKuY6RcQmwEX3Ymh4ftrrxIgEicssBBYH5EHgZBP1qplPtQJKSPdtFBHnV1Q2mU6DwG6f2gRTNaCUvbc49pvY6ZA6EXZBs"
 # RECIPIENT_NUMBER = "447709769066"
+
+# TODO:Add recepient number from the message sender
 RECIPIENT_NUMBER = "+254736391323"
 
 
@@ -50,4 +58,4 @@ def whatsapp_messenger(llm_text_output: Any):
 
 
 # used for testing
-# whatsapp_messenger("This is the test for lantern")
+# whatsapp_messenger("This is the test for Maitho")

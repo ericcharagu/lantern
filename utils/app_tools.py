@@ -10,10 +10,8 @@ def calculate_traffic_statistics(sql_results: Dict[str, Any]) -> Dict[str, Any]:
     # Extract basic daily statistics
     daily_stats = sql_results.get("daily_statistics", {})
     location_analysis = sql_results.get("location_direction_analysis", [])
-    weather_analysis = sql_results.get("weather_impact_analysis", [])
     hourly_data = sql_results.get("hourly_aggregates", [])
     location_stats = sql_results.get("location_statistics", [])
-    temperature_correlation = sql_results.get("temperature_correlation", {})
     raw_data = sql_results.get("daily_traffic_data", [])
 
     stats = {
@@ -62,32 +60,6 @@ def calculate_traffic_statistics(sql_results: Dict[str, Any]) -> Dict[str, Any]:
             stats["direction_analysis"][direction]["locations"].append(
                 {"location": location, "count": item["total"]}
             )
-
-    # Weather impact analysis
-    if weather_analysis:
-        stats["weather_impact"] = {}
-        for weather_item in weather_analysis:
-            weather = weather_item["weather"]
-            stats["weather_impact"][weather] = {
-                "total_count": weather_item["total_count"],
-                "average_count": weather_item["avg_count"],
-            }
-
-        # Find best and worst weather conditions
-        best_weather = max(weather_analysis, key=lambda x: x["avg_count"])
-        worst_weather = min(weather_analysis, key=lambda x: x["avg_count"])
-
-        stats["weather_insights"] = {
-            "best_conditions": {
-                "weather": best_weather["weather"],
-                "avg_count": best_weather["avg_count"],
-            },
-            "worst_conditions": {
-                "weather": worst_weather["weather"],
-                "avg_count": worst_weather["avg_count"],
-            },
-        }
-
     # Hourly patterns
     if hourly_data:
         stats["hourly_patterns"] = {}
@@ -139,14 +111,6 @@ def calculate_traffic_statistics(sql_results: Dict[str, Any]) -> Dict[str, Any]:
                 )
                 for loc in location_stats
             }
-
-    # Temperature correlation
-    if temperature_correlation:
-        correlation_value = temperature_correlation.get("count_temp_correlation", 0)
-        stats["temperature_correlation"] = {
-            "correlation_coefficient": correlation_value,
-            "correlation_strength": get_correlation_strength(correlation_value),
-        }
 
     # Calculate unique metrics
     if location_analysis:

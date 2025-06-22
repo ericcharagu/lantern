@@ -10,6 +10,7 @@
 **/Dockerfile
 **/README.md
 **/docker-compose.yml
+**/docker-compose.prod.yml
 **/.DS_Store
 **/venv
 **/env

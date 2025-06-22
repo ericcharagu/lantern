@@ -9,7 +9,7 @@ logger.add("./logs/db.log", rotation="700 MB")
 load_dotenv()
 
 
-def get_traffic_by_date(target_date: Any) -> list:
+async def get_traffic_by_date(target_date: Any) -> list:
     """Get all traffic records for a specific date - optimized query"""
     query = """
     SELECT 
@@ -27,7 +27,7 @@ def get_traffic_by_date(target_date: Any) -> list:
     return execute_query(query, {"target_date": target_date})
 
 
-def get_hourly_counts_sorted(target_date: Any) -> list:
+async def get_hourly_counts_sorted(target_date: Any) -> list:
     """Get hourly aggregated counts - optimized with index hints"""
     query = """
     SELECT 
@@ -42,7 +42,7 @@ def get_hourly_counts_sorted(target_date: Any) -> list:
     return execute_query(query, {"target_date": target_date.date()})
 
 
-def get_top_locations(target_date: Any, n: int = 5) -> list:
+async def get_top_locations(target_date: Any, n: int = 5) -> list:
     """Get top n locations by total count - optimized aggregation"""
     try:
         query = """
@@ -63,7 +63,7 @@ def get_top_locations(target_date: Any, n: int = 5) -> list:
         return []
 
 
-def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
+async def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
     """
     Get comprehensive traffic analytics using optimized single-pass queries.
     Args:
@@ -186,7 +186,7 @@ def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
         return {}
 
 
-def get_traffic_summary(target_date: datetime) -> dict:
+async def get_traffic_summary(target_date: datetime) -> dict:
     """
     Get a quick traffic summary - ultra-optimized single query
     """

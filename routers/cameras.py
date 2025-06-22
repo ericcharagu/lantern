@@ -17,14 +17,19 @@ from loguru import logger
 from ultralytics import YOLO
 from utils.db.base import CameraTraffic, bulk_insert_query
 from utils.holidays import holiday_checker
-
+import os
+from dotenv import load_dotenv
 
 # Configure logging
 logger.add("./logs/multi-camera.log", rotation="1 week")
+with open("/run/secrets/camera_login_secrets.txt", "r") as f:
+    camera_rtsp_password = f.read().strip()
+
+load_dotenv()
 
 # Constants
-USERNAME = "admin"
-PASSWORD = "Lantern@2030"
+USERNAME = os.getenv("CAMERA_RTSP_USERNAME")
+PASSWORD = camera_rtsp_password
 PORT = 554
 VIDEO_FPS = 30
 DETECTION_INTERVAL = 1.0  # Process detection every 1 second
@@ -248,25 +253,32 @@ CAMERAS = {
 # Global variables for frame and detection management
 current_frames: Dict[int, Optional[bytes]] = {cam_id: None for cam_id in CAMERAS}
 frame_locks: Dict[int, Lock] = {cam_id: Lock() for cam_id in CAMERAS}
-detection_queue = asyncio.Queue(maxsize=1000)
+detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
 
 # Process pool for YOLO inference
 process_pool = None
 
-app = FastAPI()
+# Declaring the onject detection mdel to be used
+object_detection_model = None
 
 
 def process_yolo_detection(
     frame_data: Tuple[np.ndarray, int, str, str],
 ) -> Optional[DetectionResult]:
     """Process YOLO detection in a separate process"""
+    global object_detection_model
     try:
+        # Lazy-load the model once per worker process
+        if object_detection_model is None:
+            object_detection_model = YOLO("yolo11l.pt")
+            logger.info(f"YOLO model loaded in process {mp.current_process().pid}")
+
         frame, cam_id, camera_name, location = frame_data
 
-        model = YOLO("yolo11l.pt")
-
-        results = model.predict(frame, conf=0.6, classes=[0], verbose=False)
+        results = object_detection_model.predict(
+            frame, conf=0.6, classes=[0], verbose=False
+        )
         if len(results) > 0 and len(results[0].boxes) > 0:
             boxes = results[0].boxes
             person_detections = boxes[boxes.cls == 0]  # Filter for persons only
@@ -483,51 +495,6 @@ async def generate_frames(cam_id: int):
         await asyncio.sleep(1.0 / VIDEO_FPS)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Combined lifespan management for ML models and camera processing"""
-    global process_pool, stream_active
-
-    # STARTUP - Load ML models and start background tasks
-    logger.info("Starting application...")
-
-    # Initialize process pool for YOLO processing
-    process_pool = ProcessPoolExecutor(max_workers=MAX_WORKERS)
-    logger.info(f"Process pool initialized with {MAX_WORKERS} workers")
-
-    # Start detection processor
-    asyncio.create_task(detection_processor())
-    logger.info("Detection processor started")
-
-    # Start camera capture tasks in batches to avoid overwhelming the system
-    for i in range(0, len(CAMERAS), BATCH_SIZE):
-        batch_cameras = dict(list(CAMERAS.items())[i : i + BATCH_SIZE])
-        for cam_id, config in batch_cameras.items():
-            asyncio.create_task(capture_camera_frames(cam_id, config))
-        # Small delay between batches
-        await asyncio.sleep(1)
-
-    logger.info(
-        f"Started {len(CAMERAS)} camera capture tasks with {MAX_WORKERS} YOLO workers"
-    )
-
-    # Application is ready
-    yield
-
-    # SHUTDOWN - Clean up resources
-    logger.info("Shutting down application...")
-
-    # Stop camera streams
-    stream_active = False
-
-    # Shutdown process pool
-    if process_pool:
-        process_pool.shutdown(wait=True)
-        logger.info("Process pool shut down")
-
-    logger.info("Application shutdown complete")
-
-
 router = APIRouter(
     prefix="/camera",
     tags=["camera_detections"],
@@ -535,7 +502,7 @@ router = APIRouter(
 )
 
 
-@app.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 async def index():
     """Home page with all camera feeds"""
     camera_html = "".join(
@@ -673,7 +640,7 @@ async def index():
     """
 
 
-@app.get("/video/{cam_id}")
+@router.get("/video/{cam_id}")
 async def video_feed(cam_id: int):
     """Video streaming endpoint for individual cameras"""
     if cam_id not in CAMERAS:
@@ -686,7 +653,7 @@ async def video_feed(cam_id: int):
     )
 
 
-@app.get("/api/status")
+@router.get("/api/status")
 async def get_status():
     """API endpoint to get system status"""
     active_cameras = sum(1 for frame in current_frames.values() if frame is not None)

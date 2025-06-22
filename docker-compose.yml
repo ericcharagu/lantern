@@ -24,25 +24,17 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ./:/app
+      - ./:/app   #removed during prod
       - ./logs:/app/logs
     restart: unless-stopped
     env_file:
       - .env
     secrets:
       - postgres_secrets
+      - camera_secrets
+      - request_secrets
     networks:
       - llm_network
-    command:
-      - "uvicorn"
-      - "main:app"
-      - "--host"
-      - "0.0.0.0"
-      - "--port"
-      - "8000"
-      - "--log-level"
-      - "debug"
-      - "--reload" # Remove in production
     ports:
       - "8000:8000"
 
@@ -118,4 +110,6 @@ secrets:
   whatsapp_secrets:
     file: ./secrets/whatsapp_secrets.txt
   request_secrets:
-    file: ./secrets.request_secrets.txt
+    file: ./secrets/request_secrets.txt
+  camera_secrets:
+    file: ./secrets/camera_login_secrets.txt

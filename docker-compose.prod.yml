@@ -1,0 +1,78 @@
+version: "3.8"
+services:
+  llm_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_server
+    restart: unless-stopped
+    env_file: .env
+    secrets:
+      - postgres_secrets
+      - whatsapp_secrets
+      - request_secrets
+      - camera_secrets
+    depends_on:
+      ollama: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+    networks:
+      - llm_network
+    ports:
+      - "127.0.0.1:8000:8000" 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama_server
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - llm_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: db_server
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_secrets
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - llm_network
+
+  valkey:
+    image: valkey/valkey:7.2-alpine
+    container_name: cache_server
+    restart: unless-stopped
+    volumes:
+      - cache_data:/data
+    networks:
+      - llm_network
+
+networks:
+  llm_network:
+    driver: bridge
+
+volumes:
+  ollama_data:
+  postgres_data:
+  cache_data:
+secrets:
+  postgres_secrets:
+    file: ./secrets/postgres_secrets.txt
+  whatsapp_secrets:
+    file: ./secrets/whatsapp_secrets.txt
+  request_secrets:
+    file: ./secrets/request_secrets.txt
+  camera_secrets:
+    file: ./secrets/camera_login_secrets.txt
+

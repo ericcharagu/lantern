@@ -112,7 +112,7 @@ def execute_query(query: str, params: dict) -> list:
         return []
 
 
-async def single_insert_query(db_table_name: Type[Base], query_values: dict):
+async def single_insert_query(db_table_name: Base, query_values: dict):
     """Execute an insert query based on the databse name"""
     try:
         with engine.connect() as conn:
@@ -125,7 +125,7 @@ async def single_insert_query(db_table_name: Type[Base], query_values: dict):
 
 
 async def bulk_insert_query(
-    db_table_name: Type[Base],
+    db_table_name: Base,
     query_values: Union[Dict[str, Any], List[Dict[str, Any]]],
     batch_size: int,
 ):
