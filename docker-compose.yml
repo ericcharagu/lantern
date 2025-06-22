@@ -1,22 +1,13 @@
 version: "3.8"
 services:
-  object_detection:
-    image: ultralytics/ultralytics
-    container_name: yolo_model
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./results:/app/results
-    restart: always
-    networks:
-      - llm_network
-
   llm_service:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: llm_server
     depends_on:
+      yolo_server:
+        condition: service_healthy
       ollama:
         condition: service_healthy
       postgres:
@@ -37,7 +28,29 @@ services:
       - llm_network
     ports:
       - "8000:8000"
-
+  yolo_service:
+    image: ultralytics/ultralytics:latest
+    container_name: yolo_server
+    working_dir: /app
+    command: >
+      bash -c "pip install -r /app/requirements.txt &&
+               python -m uvicorn yolo_app:app --host 0.0.0.0 --port 5000 --reload"
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount our service code into the container
+      - ./yolo_service:/app
+      # Mount the model file separately into a specific directory
+      - ./yolo11l.pt:/app/models/yolo11l.pt
+    restart: unless-stopped
+    networks:
+      - llm_network
+    # Add a healthcheck to ensure the service is running before the main app depends on it
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 600s
+      timeout: 10s
+      retries: 5
   ollama:
     image: ollama/ollama:latest
     container_name: ollama_server

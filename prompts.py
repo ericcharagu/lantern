@@ -60,7 +60,7 @@ End your responses professionally. A simple "Is there anything else I can help y
 # PROMPT 2: INTERNAL DATA ANALYST (For the '/analyse' endpoint)
 # ==============================================================================
 # This is the new, enhanced prompt for your analysis service.
-PROMPT_INTERNAL_ANALYST = """
+PROMPT_REPORT_ANALYST = """
 # **IDENTITY AND CORE MISSION**
 You are a top-tier Data Analytics Specialist providing a strategic business intelligence report for the management of Lantern Serviced Apartments.
 Your analysis must be objective, data-driven, and aimed at improving operational performance and profitability.

@@ -1,28 +1,26 @@
 import asyncio
 import multiprocessing as mp
+import os
 import time
-from concurrent.futures import ProcessPoolExecutor
-from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import cv2
+import httpx
 import numpy as np
-import uvicorn
-from fastapi import FastAPI, Response, APIRouter
+from dotenv import load_dotenv
+from fastapi import APIRouter, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from loguru import logger
-from ultralytics import YOLO
 from utils.db.base import CameraTraffic, bulk_insert_query
 from utils.holidays import holiday_checker
-import os
-from dotenv import load_dotenv
+
 
 # Configure logging
 logger.add("./logs/multi-camera.log", rotation="1 week")
-with open("/run/secrets/camera_login_secrets.txt", "r") as f:
+with open("/app/secrets/camera_login_secrets.txt", "r") as f:
     camera_rtsp_password = f.read().strip()
 
 load_dotenv()
@@ -257,57 +255,13 @@ detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
 
 # Process pool for YOLO inference
-process_pool = None
+YOLO_SERVICE_URL = "http://yolo_service:5000/detect"
+
+# Create a single, reusable async client for performance
+async_http_client = httpx.AsyncClient(timeout=10.0)
 
 # Declaring the onject detection mdel to be used
 object_detection_model = None
-
-
-def process_yolo_detection(
-    frame_data: Tuple[np.ndarray, int, str, str],
-) -> Optional[DetectionResult]:
-    """Process YOLO detection in a separate process"""
-    global object_detection_model
-    try:
-        # Lazy-load the model once per worker process
-        if object_detection_model is None:
-            object_detection_model = YOLO("yolo11l.pt")
-            logger.info(f"YOLO model loaded in process {mp.current_process().pid}")
-
-        frame, cam_id, camera_name, location = frame_data
-
-        results = object_detection_model.predict(
-            frame, conf=0.6, classes=[0], verbose=False
-        )
-        if len(results) > 0 and len(results[0].boxes) > 0:
-            boxes = results[0].boxes
-            person_detections = boxes[boxes.cls == 0]  # Filter for persons only
-
-            count = len(person_detections)
-            # confidence_scores = (
-            #     person_detections.conf.cpu().numpy().tolist() if count > 0 else []
-            # )
-            # bounding_boxes = (
-            #    person_detections.xyxy.cpu().numpy().tolist() if count > 0 else []
-            # )
-
-            now = datetime.now(timezone.utc)
-
-            return DetectionResult(
-                timestamp=now.isoformat(),
-                camera_name=f"cam_{location}_{cam_id:02d}",
-                count=count,
-                location=location,
-                day_of_week=now.strftime("%A").lower(),
-                is_holiday=holiday_checker(),
-                direction=TEST_DIRECTION,
-                # confidence_scores=confidence_scores,
-                # bounding_boxes=bounding_boxes,
-            )
-    except ValueError as e:
-        logger.error(f"YOLO processing error for camera {cam_id}: {str(e)}")
-
-    return None
 
 
 async def detection_processor():
@@ -365,6 +319,34 @@ def generate_rtsp_url(camera: dict) -> List[str]:
     ]
 
 
+async def get_detections_from_service(frame: np.ndarray) -> Optional[dict]:
+    """Encodes a frame and sends it to the YOLO service for detection."""
+    try:
+        # Encode the frame to JPEG format in memory
+        is_success, buffer = cv2.imencode(".jpg", frame)
+        if not is_success:
+            logger.warning("Failed to encode frame to JPEG.")
+            return None
+
+        # Prepare the file for multipart/form-data upload
+        files = {"file": ("frame.jpg", buffer.tobytes(), "image/jpeg")}
+
+        # Make the async HTTP request
+        response = await async_http_client.post(YOLO_SERVICE_URL, files=files)
+
+        # Check for successful response
+        response.raise_for_status()  # Raises an exception for 4xx/5xx errors
+
+        return response.json()
+
+    except httpx.RequestError as e:
+        logger.error(f"HTTP request to YOLO service failed: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred when calling YOLO service: {e}")
+        return None
+
+
 async def capture_camera_frames(cam_id: int, camera_config: dict):
     """Optimized background task to capture frames from a specific camera"""
     global current_frames, stream_active, process_pool
@@ -407,28 +389,36 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
                 # Process detection at intervals (not every frame)
                 if current_time - last_detection_time >= DETECTION_INTERVAL:
                     try:
-                        # Resize frame for faster processing
+                        # Resize frame for faster upload
                         detection_frame = cv2.resize(frame, (640, 480))
 
-                        # Submit to process pool for YOLO inference
-                        loop = asyncio.get_event_loop()
-                        future = loop.run_in_executor(
-                            process_pool,
-                            process_yolo_detection,
-                            (
-                                detection_frame,
-                                cam_id,
-                                camera_config["name"],
-                                camera_config["location"],
-                            ),
+                        # Call our new function to get detections
+                        detection_result = await get_detections_from_service(
+                            detection_frame
                         )
-                        # Process the results async
-                        asyncio.create_task(handle_detection_result(future))
+
+                        if (
+                            detection_result
+                            and detection_result.get("person_count", 0) > 0
+                        ):
+                            now = datetime.now(timezone.utc)
+                            # Create the result object to be sent to the database
+                            db_record = DetectionResult(
+                                timestamp=now.isoformat(),
+                                camera_name=f"cam_{camera_config['location']}_{cam_id:02d}",
+                                count=detection_result["person_count"],
+                                location=camera_config["location"],
+                                day_of_week=now.strftime("%A").lower(),
+                                is_holiday=holiday_checker(),
+                                direction="Entry",  # You still need to solve this logic
+                            )
+                            await detection_queue.put(db_record)
+
                         last_detection_time = current_time
 
                     except ValueError as e:
                         logger.error(
-                            f"Detection submission error for camera {cam_id}: {str(e)}"
+                            f"Detection submission error for camera {cam_id}: {e}"
                         )
 
                 # Encode frame for streaming (smaller size for web display)

@@ -2,7 +2,7 @@
 
 import valkey
 from ollama import AsyncClient
-from app.config import settings
+from config import settings
 
 # Initialize clients once and reuse them
 ollama_client = AsyncClient(host=settings.OLLAMA_HOST)

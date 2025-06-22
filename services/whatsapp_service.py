@@ -5,12 +5,12 @@ from datetime import datetime, timezone
 from loguru import logger
 from ollama import AsyncClient
 
-from app.config import settings
+from config import settings
 from utils.whatsapp.whatsapp import send_whatsapp_message
 from utils.db.base import single_insert_query, MobileRequestLog
-from app.dependencies import get_ollama_client  # If you have this pattern
-from app.schemas import GenerationRequest  # Assuming this is the correct schema
-from app.prompts import PROMPT_WHATSAPP_ASSISTANT
+from dependencies import get_ollama_client  # If you have this pattern
+from schemas import GenerationRequest  # Assuming this is the correct schema
+from prompts import PROMPT_WHATSAPP_ASSISTANT
 
 
 async def handle_incoming_message(payload: dict):

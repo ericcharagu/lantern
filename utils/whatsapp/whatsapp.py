@@ -58,4 +58,4 @@ def whatsapp_messenger(llm_text_output: Any):
 
 
 # used for testing
-# whatsapp_messenger("This is the test for Maitho")
+# whatsapp_messenger("This is the test for Lantern")

@@ -5,12 +5,13 @@ from pydantic import BaseModel
 from typing import Annotated
 
 from ollama import AsyncClient
-from app.dependencies import (
+from dependencies import (
     get_ollama_client,
-    get_current_active_user,
+    # get_current_active_user,
 )  # Your auth dependency
-from app.prompts import PROMPT_INTERNAL_ASSISTANT
-from models.user_db import User  # Import your User model for typing
+from prompts import PROMPT_INTERNAL_ASSISTANT
+from utils.db.user_db import User  # Import your User model for typing
+from routers.auth import get_current_active_user
 
 router = APIRouter(
     prefix="/internal",

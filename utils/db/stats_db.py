@@ -6,7 +6,6 @@ from utils.db.base import execute_query
 
 # Define logger path
 logger.add("./logs/db.log", rotation="700 MB")
-load_dotenv()
 
 
 async def get_traffic_by_date(target_date: Any) -> list:
@@ -24,7 +23,7 @@ async def get_traffic_by_date(target_date: Any) -> list:
     WHERE DATE(timestamp) = :target_date
     ORDER BY count DESC;
     """
-    return execute_query(query, {"target_date": target_date})
+    return await execute_query(query, {"target_date": target_date})
 
 
 async def get_hourly_counts_sorted(target_date: Any) -> list:
@@ -39,7 +38,7 @@ async def get_hourly_counts_sorted(target_date: Any) -> list:
     GROUP BY EXTRACT(HOUR FROM timestamp), location
     ORDER BY hour, total_count DESC;
     """
-    return execute_query(query, {"target_date": target_date.date()})
+    return await execute_query(query, {"target_date": target_date.date()})
 
 
 async def get_top_locations(target_date: Any, n: int = 5) -> list:
@@ -57,7 +56,9 @@ async def get_top_locations(target_date: Any, n: int = 5) -> list:
     ORDER BY total_count DESC
     LIMIT :limit_n;
     """
-        return execute_query(query, {"target_date": target_date.date(), "limit_n": n})
+        return await execute_query(
+            query, {"target_date": target_date.date(), "limit_n": n}
+        )
     except ValueError as e:
         logger.debug(f"Failed to get locations statistics due to {e}")
         return []
@@ -161,7 +162,7 @@ async def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
         """
 
         # Execute comprehensive query
-        comprehensive_results = execute_query(
+        comprehensive_results = await execute_query(
             comprehensive_query, {"target_date": target_date, "top_n": top_n}
         )
 
@@ -176,7 +177,7 @@ async def get_traffic_analytics(target_date: datetime, top_n: int = 5) -> dict:
                 results[query_type] = data if data else []
 
         # Get detailed daily data separately (for memory efficiency)
-        daily_data = get_traffic_by_date(target_date)
+        daily_data = await get_traffic_by_date(target_date)
         results["daily_traffic_data"] = daily_data if daily_data else None
 
         return results
@@ -203,7 +204,7 @@ async def get_traffic_summary(target_date: datetime) -> dict:
     WHERE DATE(timestamp) = :target_date;
     """
 
-        result = execute_query(query, {"target_date": target_date})
+        result = await execute_query(query, {"target_date": target_date})
         return result[0]
     except ValueError as e:
         logger.debug(f"Results misisng for the date due to {e}")

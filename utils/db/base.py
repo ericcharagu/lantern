@@ -1,26 +1,37 @@
-# db/base.py
-from numpy import insert
-from sqlalchemy import create_engine, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session
-from datetime import datetime, timezone
-from dotenv import load_dotenv
-import os
-from loguru import logger
-from typing import Any, Type, Union, Dict, List
+# FILE: utils/db/base.py
+
 import contextlib
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, JSON
+from typing import Any, List, Dict, Union
+from datetime import datetime, timezone
+import os
+
+from dotenv import load_dotenv
+from loguru import logger
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Boolean,
+    Float,
+    Text,
+    JSON,
+    text,
+    insert,
+)
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 
 # Define logger path
 logger.add("./logs/base_db.log", rotation="1 week")
 # Load environment variables
 load_dotenv()
 
-# Base class for all models
+# Base class for all models remains the same
 Base = declarative_base()
 
 
-# Common data classes to be reused
+# Common data classes to be reused (no changes here)
 class CameraTraffic(Base):
     __tablename__ = "camera_traffic"
     id = Column(Integer, primary_key=True)
@@ -35,34 +46,36 @@ class CameraTraffic(Base):
 
 class MobileRequestLog(Base):
     __tablename__ = "mobile_request_logs"
-
-    id = Column(String, primary_key=True, index=True)  # Same as request_id
-    client_timestamp = Column(DateTime, nullable=True)  # From mobile client
-    server_timestamp = Column(
-        DateTime, default=datetime.now(timezone.utc)
-    )  # When we received it
-    prompt = Column(Text, nullable=False)  # User's prompt
-    response = Column(Text, nullable=True)  # AI response (nullable for errors)
-    status = Column(
-        String(50), nullable=False
-    )  # 'received', 'processing', 'completed', 'error'
-    model = Column(String(100), nullable=True)  # Model used
-    response_time = Column(Float, nullable=True)  # In seconds
-    prompt_hash = Column(String(64), index=True)  # For deduplication
-    error_message = Column(Text, nullable=True)  # If status='error'
+    id = Column(String, primary_key=True, index=True)
+    client_timestamp = Column(DateTime, nullable=True)
+    server_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    prompt = Column(Text, nullable=False)
+    response = Column(Text, nullable=True)
+    status = Column(String(50), nullable=False)
+    model = Column(String(100), nullable=True)
+    response_time = Column(Float, nullable=True)
+    prompt_hash = Column(String(64), index=True)
+    error_message = Column(Text, nullable=True)
 
     def __repr__(self):
-        return f"<OllamaRequestLog(id={self.id}, status={self.status}, model={self.model})>"
+        return f"<MobileRequestLog(id={self.id}, status={self.status}, model={self.model})>"
 
 
-def get_connection_string() -> str:
-    """Construct the database connection string from environment variables"""
+def get_async_connection_string() -> str:
+    """Construct the ASYNCHRONOUS database connection string."""
     try:
-        with open("/app/secrets/postgres_secrets.txt", "r") as f:
+        # Assumes the secret is at /run/secrets/postgres_secrets in Docker
+        # For local dev, you might need a different path or load from .env
+        secret_path = "/run/secrets/postgres_secrets"
+        if not os.path.exists(secret_path):
+            secret_path = "./secrets/postgres_secrets.txt"  # Fallback for local dev
+
+        with open(secret_path, "r") as f:
             password = f.read().strip()
 
+        # The key change: postgresql+asyncpg
         return (
-            f"postgresql://{os.getenv('DB_USER')}:{password}@"
+            f"postgresql+asyncpg://{os.getenv('DB_USER')}:{password}@"
             f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT', 5432)}/"
             f"{os.getenv('DB_NAME')}"
         )
@@ -71,126 +84,104 @@ def get_connection_string() -> str:
         raise
 
 
-# Create database engine with connection pooling
-engine = create_engine(
-    get_connection_string(),
-    pool_pre_ping=True,  # Check connections before using them
-    pool_recycle=300,  # Recycle connections after 5 minutes
-    pool_size=10,  # Number of connections to keep open
-    max_overflow=20,  # Allow 20 additional connections during spikes
-    echo=True,  # Set to True for SQL query logging
-    connect_args={
-        "connect_timeout": 5,  # 5 second connection timeout
-        "keepalives": 1,  # Enable TCP keepalive
-        "keepalives_idle": 30,  # Seconds before first keepalive
-        "keepalives_interval": 10,  # Interval between keepalives
-        "keepalives_count": 5,  # Number of keepalives before dropping
-    },
+# Create ASYNC database engine with connection pooling
+async_engine = create_async_engine(
+    get_async_connection_string(),
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_size=10,
+    max_overflow=20,
+    echo=True,  # TODO:Set to False in prod
 )
 
-SessionLocal = sessionmaker(
-    bind=engine,
-    autoflush=False,  # Automatically flush changes
-    autocommit=False,  # No automatic commits
-    expire_on_commit=True,  # Expire instances after commit
+# Create an ASYNC session factory
+AsyncSessionLocal = async_sessionmaker(
+    bind=async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,  # Important for async operations
+    autoflush=False,
+    autocommit=False,
 )
 
-# Scoped session for thread safety
-Session = scoped_session(SessionLocal)
+# Refactored query functions to be async
 
 
-# for the first version of stats_db
-def execute_query(query: str, params: dict) -> list:
-    """Execute a query and return results as list of dictionaries"""
+async def execute_query(query: str, params: dict = None) -> list:
+    """Execute a read-only query and return results as list of dictionaries."""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text(query), params or {})
-            columns = result.keys()
-            return [dict(zip(columns, row)) for row in result.fetchall()]
+        async with async_engine.connect() as conn:
+            result = await conn.execute(text(query), params or {})
+            # .mappings() is a convenient way to get dict-like rows
+            return result.mappings().all()
     except Exception as e:
-        logger.error(f"Query execution failed: {e}")
+        logger.error(f"Async query execution failed: {e}")
         return []
 
 
-async def single_insert_query(db_table_name: Base, query_values: dict):
-    """Execute an insert query based on the databse name"""
-    try:
-        with engine.connect() as conn:
-            insert_query = insert(db_table_name).values(**query_values)
-            conn.execute(insert_query)
-            conn.commit()
-    except ValueError as e:
-        logger.error(f"Failed to insert data due to {e}")
-        raise
+async def single_insert_query(db_table: Base, query_values: dict):
+    """Execute an async insert query for a single row."""
+    async with AsyncSessionLocal() as session:
+        try:
+            session.add(db_table(**query_values))
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to insert data into {db_table.__tablename__}: {e}")
+            raise
 
 
 async def bulk_insert_query(
-    db_table_name: Base,
+    db_table_name: type[Base],
     query_values: Union[Dict[str, Any], List[Dict[str, Any]]],
-    batch_size: int,
+    batch_size: int = 500,  # Added default batch_size
 ):
-    try:
-        with engine.connect() as conn:
-            # Handle single row (convert to list)
-            if isinstance(query_values, dict):
-                query_values = [query_values]
+    """Execute an async bulk insert query."""
+    if not query_values:
+        return
 
-            # Split into batches (to avoid huge transactions)
+    # Handle single row (convert to list)
+    if isinstance(query_values, dict):
+        query_values = [query_values]
+
+    async with AsyncSessionLocal() as session:
+        try:
+            # SQLAlchemy's `add_all` is efficient for bulk inserts
             for i in range(0, len(query_values), batch_size):
-                batch = query_values[i : i + batch_size]
-                stmt = insert(db_table_name).values(batch)
-                conn.execute(stmt)
+                batch = [
+                    db_table_name(**row) for row in query_values[i : i + batch_size]
+                ]
+                session.add_all(batch)
+                await session.commit()  # Commit each batch
+            logger.info(
+                f"Successfully inserted {len(query_values)} rows into {db_table_name.__tablename__}."
+            )
+        except Exception as e:
+            await session.rollback()
+            logger.error(
+                f"Failed to bulk insert data into {db_table_name.__tablename__}: {e}"
+            )
+            raise
 
-            conn.commit()
-    except Exception as e:
-        logger.error(f"Failed to insert data into {db_table_name.__tablename__}: {e}")
-        raise
 
-
-def init_db() -> None:
-    """Initialize the database by creating all tables"""
+# Dependency to get a DB session in FastAPI endpoints
+async def get_db() -> AsyncSession:
+    """FastAPI dependency that provides an async database session."""
+    async_session = AsyncSessionLocal()
     try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
-        raise
-
-
-@contextlib.contextmanager
-def session_scope() -> Any:
-    """Provide a transactional scope around a series of operations"""
-    session = Session()
-    try:
-        yield session
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Session rollback due to error: {e}")
-        raise
+        yield async_session
     finally:
-        session.close()
+        await async_session.close()
 
 
-def shutdown_session() -> None:
-    """Properly close all database connections"""
-    Session.remove()
-    engine.dispose()
-    logger.info("Database connections closed")
+# Other utility functions
+async def init_db() -> None:
+    """Initialize the database by creating all tables."""
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database tables created successfully (if they didn't exist).")
 
 
-# Add utility functions that might be used across models
-def current_time() -> datetime:
-    """Get current UTC time"""
-    return datetime.now(timezone.utc)
-
-
-def get_db():
-    db = Session()
-    try:
-        yield db
-    except ValueError:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+async def shutdown_db() -> None:
+    """Properly close all database connections."""
+    await async_engine.dispose()
+    logger.info("Database connections closed.")

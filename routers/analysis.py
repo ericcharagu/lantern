@@ -6,9 +6,9 @@ from ollama import AsyncClient
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
 from fastapi.responses import JSONResponse
 
-from app.schemas import AnalysisRequest, AnalysisJob
-from app.dependencies import get_valkey_client, get_ollama_client
-from app.services.analysis_service import process_analysis_in_background
+from schemas import AnalysisRequest, AnalysisJob
+from dependencies import get_valkey_client, get_ollama_client
+from services.analysis_service import process_analysis_in_background
 
 router = APIRouter(
     prefix="/analyse",
