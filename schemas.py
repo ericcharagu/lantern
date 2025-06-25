@@ -63,3 +63,13 @@ class ConversationData(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc)
     )
     prompt_id: uuid.UUID
+
+#Schemas for the YOLO services
+class DetectedObject(BaseModel):
+    """Define the object from the YOLO model."""
+    object_name:str
+    object_class:int
+    detected_timestamp:datetime
+    is_staff:str
+    detection_confidence:float
+    line_count:dict:

@@ -1,6 +1,14 @@
 # user_db.py
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Boolean,
+    DateTime,
+    Enum as SQLAlchemyEnum,
+)
+import enum
 from sqlalchemy.orm import relationship
 from werkzeug.security import generate_password_hash, check_password_hash
 from loguru import logger
@@ -8,12 +16,17 @@ from typing import Optional
 from utils.db.base import (
     Base,
     AsyncSession,
-)  # Assuming you have a base.py with these defined
-
-# Import the engine from your conversation file or from a shared base file
+)
 
 # Set up logging
 logger.add("./logs/user_db.log", rotation="1 week")
+
+
+# Define an Enum for the user groups. This enforces data integrity.
+class UserGroup(enum.Enum):
+    STAFF = "staff"
+    MANAGERIAL = "managerial"
+    ADMIN = "admin"  # Good to have an admin role for superusers
 
 
 class User(Base):
@@ -22,15 +35,22 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    username = Column(String(50), unique=True, nullable=False)
+    username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(100), unique=True, nullable=False)
     phone_number = Column(String(20), nullable=True)  # Optional phone number
-    password_hash = Column(String(128), nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    user_group = Column(
+        SQLAlchemyEnum(UserGroup), nullable=False, default=UserGroup.STAFF
+    )
+    # username = Column(String(50), unique=True, nullable=True)
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     last_login = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
+
+    def __repr__(self) -> str:
+        return f"<User id={self.id} email={self.email} group={self.user_group.value}>"
 
     # Use string reference for the relationship to avoid circular imports
     conversations = relationship("Conversation", back_populates="user")

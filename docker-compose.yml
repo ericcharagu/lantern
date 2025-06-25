@@ -28,6 +28,7 @@ services:
       - llm_network
     ports:
       - "8000:8000"
+
   yolo_service:
     image: ultralytics/ultralytics:latest
     container_name: yolo_server
@@ -41,7 +42,7 @@ services:
       # Mount our service code into the container
       - ./yolo_service:/app
       # Mount the model file separately into a specific directory
-      - ./yolo11l.pt:/app/models/yolo11l.pt
+      - ./yolo11l.pt:/app/models/yolo11l.pt:Z
     restart: unless-stopped
     networks:
       - llm_network

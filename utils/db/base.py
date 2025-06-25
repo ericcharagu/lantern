@@ -31,7 +31,18 @@ load_dotenv()
 Base = declarative_base()
 
 
-# Common data classes to be reused (no changes here)
+# Common data classes to be reused
+class Camera(Base):
+    __tablename__ = "cameras"
+    id = Column(Integer, primary_key=True)
+    channel = Column(DateTime(timezone=True))
+    ip_address = Column(String(15))
+    name = Column(String(100))
+    location = Column(String(100))
+    direction = Column(String(20))
+    is_active = Column(Boolean)
+
+
 class CameraTraffic(Base):
     __tablename__ = "camera_traffic"
     id = Column(Integer, primary_key=True)

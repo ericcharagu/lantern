@@ -17,6 +17,7 @@ from routers import (
     cameras,
     webhooks,
     internal,
+    dashboard,
 )  # Import all your routers
 from routers.cameras import (
     MAX_WORKERS,
@@ -91,6 +92,7 @@ app.include_router(cameras.router)
 app.include_router(analysis.router)
 app.include_router(webhooks.router)  # Add this once you create the file
 app.include_router(internal.router)
+app.include_router(dashboard.router)
 
 
 # 4. Add a simple root endpoint for a basic health check

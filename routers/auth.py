@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, EmailStr
 from utils.db.base import AsyncSession, get_db
 
 # from utils.db.conversation_db import Conversation
-from utils.db.user_db import User, UserManager
+from utils.db.user_db import User, UserManager, UserGroup
 
 
 # Loading env and its variables
@@ -279,6 +279,7 @@ async def register_form_submit(
     email: str = Form(...),
     password: str = Form(...),
     phone_number: str = Form(""),  # Empty string as default
+    is_managerial: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     # Validate input
@@ -291,6 +292,9 @@ async def register_form_submit(
         raise HTTPException(
             status_code=400, detail="Password must be at least 8 characters"
         )
+
+    # Determine the user group based on the checkbox
+    user_group = UserGroup.MANAGERIAL if is_managerial == "true" else UserGroup.STAFF
 
     # Process registration
     user_data = {
@@ -326,10 +330,11 @@ async def register_form_submit(
             phone_number=user_data["phone_number"],
             password_hash=get_password_hash(user_data["password"]),
             created_at=datetime.now(timezone.utc),
+            user_group=user_group,
             is_active=True,
         )
 
-        await db.add(new_user)
+        db.add(new_user)
         await db.commit()
 
         return RedirectResponse(url="/auth/login?registered=true", status_code=303)

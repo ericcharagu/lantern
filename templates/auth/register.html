@@ -37,6 +37,11 @@
                             <input type="tel" class="form-control" id="phone_number" name="phone_number"
                                    value="{{ form_data.phone_number if form_data else '' }}">
                         </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="is_managerial" name="is_managerial" value="true">
+                            <label class="form-check-label" for="is_managerial">Create as Managerial Account</label>
+                            <small class="form-text text-muted">Grants access to analytics and dashboards.</small>
+                        </div>
 
                         <button type="submit" class="btn btn-primary w-100">Register</button>
                     </form>

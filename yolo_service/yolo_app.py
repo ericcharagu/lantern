@@ -5,7 +5,10 @@ import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from ultralytics import YOLO
 from loguru import logger
+from staff_counter import count_staff_detected
 
+# Add logging for the YOLO server
+logger.add("./logs/yolo_app.log", rotation="1 week")
 # --- Model Loading ---
 try:
     model = YOLO("/app/models/yolo11l.pt")
@@ -16,10 +19,11 @@ except Exception as e:
     logger.error(f"Error loading YOLO model: {e}")
     raise e
 
-app = FastAPI(title="YOLOv8 Inference Service")
+app = FastAPI(title="Yolo11 inference")
 
 
 @app.post("/detect")
+@logger.catch()
 async def detect_objects(file: UploadFile = File(...)):
     """
     Accepts an image file, performs object detection, and returns
@@ -41,26 +45,13 @@ async def detect_objects(file: UploadFile = File(...)):
 
         # Perform inference
         results = model.predict(
-            frame, conf=0.6, classes=[0], verbose=False
-        )  # Detect only 'person' class
-
-        # --- Process and Format Results ---
-        # Extract the relevant data to send back.
-        # We want to keep the response payload small and efficient.
-        detections = []
-        if len(results) > 0 and len(results[0].boxes) > 0:
-            boxes = results[0].boxes
-            person_detections = boxes[boxes.cls == 0]
-
-            for box in person_detections:
-                detections.append(
-                    {
-                        "confidence": box.conf.cpu().numpy().tolist()[0],
-                        "bounding_box": box.xyxy.cpu().numpy().tolist()[0],
-                    }
-                )
-
-        return {"person_count": len(detections), "detections": detections}
+            frame, conf=0.6, verbose=False, classes=[0, 1, 2, 3], stream=True
+        )  # Detect person, bicycle, motorbike, car
+        # -- Process and Format Results ---
+        counted_staff = count_staff_detected(results)
+        return {
+            "detections": [result.to_json() for result in results],
+        }
 
     except Exception as e:
         logger.error(f"Error during detection: {e}")

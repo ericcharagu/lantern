@@ -17,14 +17,11 @@ from loguru import logger
 from utils.db.base import CameraTraffic, bulk_insert_query
 from utils.holidays import holiday_checker
 
-
 # Configure logging
 logger.add("./logs/multi-camera.log", rotation="1 week")
 with open("/app/secrets/camera_login_secrets.txt", "r") as f:
     camera_rtsp_password = f.read().strip()
-
 load_dotenv()
-
 # Constants
 USERNAME = os.getenv("CAMERA_RTSP_USERNAME")
 PASSWORD = camera_rtsp_password
@@ -49,208 +46,12 @@ class DetectionResult:
     # bounding_boxes: List[List[float]]
 
 
-# TODO:Denote cameras with direction implicatins such as the entrances and exits.
-# TODO: Create separate tables/columns for each of those "special" data types. Consider storing them in a separate table that can house the additional metrics
 TEST_DIRECTION = "Entry"
 # Camera configuration dictionary
-CAMERAS = {
-    1: {
-        "channel": 1,
-        "ip": "192.168.1.79",
-        "name": "Borehole",
-        "location": "borehole_area",
-    },
-    2: {
-        "channel": 2,
-        "ip": "192.168.1.199",
-        "name": "Borehole",
-        "location": "borehole_area",
-    },
-    3: {
-        "channel": 3,
-        "ip": "192.168.1.67",
-        "name": "Exit Gate Wall",
-        "location": "exit_gate",
-    },
-    4: {
-        "channel": 4,
-        "ip": "192.168.1.139",
-        "name": "Main Gate",
-        "location": "main_entrance",
-    },
-    5: {
-        "channel": 5,
-        "ip": "192.168.1.78",
-        "name": "Third Flight",
-        "location": "stairway_03",
-    },
-    6: {
-        "channel": 6,
-        "ip": "192.168.1.66",
-        "name": "Fourth Flight",
-        "location": "stairway_04",
-    },
-    7: {
-        "channel": 7,
-        "ip": "192.168.1.197",
-        "name": "Fifth Flight",
-        "location": "stairway_05",
-    },
-    8: {
-        "channel": 8,
-        "ip": "192.168.1.75",
-        "name": "Sixth Flight",
-        "location": "stairway_06",
-    },
-    9: {
-        "channel": 9,
-        "ip": "192.168.1.73",
-        "name": "Seventh Flight",
-        "location": "stairway_07",
-    },
-    10: {
-        "channel": 10,
-        "ip": "192.168.1.74",
-        "name": "Eighth Flight",
-        "location": "stairway_08",
-    },
-    11: {
-        "channel": 11,
-        "ip": "192.168.1.82",
-        "name": "Ninth Flight",
-        "location": "stairway_09",
-    },
-    12: {
-        "channel": 12,
-        "ip": "192.168.1.77",
-        "name": "Tenth Flight",
-        "location": "stairway_10",
-    },
-    13: {
-        "channel": 13,
-        "ip": "192.168.1.70",
-        "name": "Eleventh Flight",
-        "location": "stairway_11",
-    },
-    14: {
-        "channel": 14,
-        "ip": "192.168.1.81",
-        "name": "Twelfth Flight",
-        "location": "stairway_12",
-    },
-    15: {
-        "channel": 15,
-        "ip": "192.168.1.89",
-        "name": "Thirteenth Flight",
-        "location": "stairway_13",
-    },
-    16: {
-        "channel": 16,
-        "ip": "192.168.1.90",
-        "name": "Fourteenth Flight",
-        "location": "stairway_14",
-    },
-    17: {
-        "channel": 17,
-        "ip": "192.168.1.137",
-        "name": "Fifteenth Flight",
-        "location": "stairway_15",
-    },
-    18: {
-        "channel": 18,
-        "ip": "192.168.1.136",
-        "name": "Sixteenth Flight",
-        "location": "stairway_16",
-    },
-    19: {
-        "channel": 19,
-        "ip": "192.168.1.202",
-        "name": "Seventeenth Flight",
-        "location": "stairway_17",
-    },
-    20: {
-        "channel": 20,
-        "ip": "192.168.1.72",
-        "name": "Eighteenth Flight",
-        "location": "stairway_18",
-    },
-    21: {
-        "channel": 21,
-        "ip": "192.168.1.129",
-        "name": "Nineteenth Flight",
-        "location": "stairway_19",
-    },
-    22: {
-        "channel": 22,
-        "ip": "192.168.1.116",
-        "name": "Twentieth Flight",
-        "location": "stairway_20",
-    },
-    23: {
-        "channel": 23,
-        "ip": "192.168.1.190",
-        "name": "Twenty-first Flight",
-        "location": "stairway_21",
-    },
-    24: {
-        "channel": 24,
-        "ip": "192.168.1.135",
-        "name": "Twenty-second Flight",
-        "location": "stairway_22",
-    },
-    25: {
-        "channel": 25,
-        "ip": "192.168.1.103",
-        "name": "Twenty-third Flight",
-        "location": "stairway_23",
-    },
-    26: {
-        "channel": 26,
-        "ip": "192.168.1.61",
-        "name": "Twenty-fourth Flight",
-        "location": "stairway_24",
-    },
-    27: {
-        "channel": 27,
-        "ip": "192.168.1.71",
-        "name": "Twenty-fifth Flight",
-        "location": "stairway_25",
-    },
-    28: {
-        "channel": 28,
-        "ip": "192.168.1.102",
-        "name": "Twenty-sixth Flight",
-        "location": "stairway_26",
-    },
-    29: {
-        "channel": 29,
-        "ip": "192.168.1.68",
-        "name": "Twenty-seventh Flight",
-        "location": "stairway_27",
-    },
-    30: {
-        "channel": 30,
-        "ip": "192.168.1.120",
-        "name": "Twenty-eighth Flight",
-        "location": "stairway_28",
-    },
-    31: {
-        "channel": 31,
-        "ip": "192.168.1.69",
-        "name": "Twenty-ninth Flight",
-        "location": "stairway_29",
-    },
-    32: {
-        "channel": 32,
-        "ip": "192.168.1.76",
-        "name": "Thirtieth Flight",
-        "location": "stairway_30",
-    },
-}
-
 # Global variables for frame and detection management
-current_frames: Dict[int, Optional[bytes]] = {cam_id: None for cam_id in CAMERAS}
-frame_locks: Dict[int, Lock] = {cam_id: Lock() for cam_id in CAMERAS}
+ACTIVE_CAMERAS: Dict[int, Dict] = {}
+current_frames: Dict[int, Optional[bytes]] = {}
+frame_locks: Dict[int, asyncio.Lock] = {}  # Use asyncio.Lock for async code
 detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
 
@@ -260,8 +61,81 @@ YOLO_SERVICE_URL = "http://yolo_service:5000/detect"
 # Create a single, reusable async client for performance
 async_http_client = httpx.AsyncClient(timeout=10.0)
 
-# Declaring the onject detection mdel to be used
-object_detection_model = None
+
+async def load_camera_configurations():
+    """
+    Fetches active camera configurations from the database at application startup.
+    It populates the global state dictionaries (ACTIVE_CAMERAS, current_frames,
+    and frame_locks) that are essential for the camera processing tasks.
+    """
+    logger.info("Attempting to load camera configurations from database...")
+    db_session: AsyncSession
+    async for db_session in get_db():
+        try:
+            # SQL query to get all cameras marked as active, ordered by their channel number
+            query = text(
+                """
+                SELECT channel, ip, name, location
+                FROM cameras
+                ORDER BY channel
+                """
+            )
+
+            result = await db_session.execute(query)
+            cameras_from_db = result.mappings().all()
+
+            if not cameras_from_db:
+                logger.warning(
+                    "No active cameras found in the database. The camera streaming service will be idle."
+                )
+                # Ensure globals are empty if no cameras are found
+                ACTIVE_CAMERAS.clear()
+                current_frames.clear()
+                frame_locks.clear()
+                return  # Exit the function early
+
+            ACTIVE_CAMERAS.clear()
+            current_frames.clear()
+            frame_locks.clear()
+            logger.debug("Cleared existing camera configurations for a fresh load.")
+
+            # --- Populate the global state from the database records ---
+            for cam in cameras_from_db:
+                cam_id = cam["channel"]
+
+                # 1. Add the camera's configuration to the main dictionary
+                ACTIVE_CAMERAS[cam_id] = {
+                    "channel": cam_id,
+                    "ip": cam["ip_address"],
+                    "name": cam["name"],
+                    "location": cam["location"],
+                }
+
+                # 2. Initialize the placeholder for the latest frame to None
+                current_frames[cam_id] = None
+
+                # 3. Initialize an asyncio.Lock for each camera to prevent race conditions
+                #    when updating the current_frame from multiple async tasks.
+                frame_locks[cam_id] = asyncio.Lock()
+
+            logger.success(
+                f"Successfully loaded and initialized {len(ACTIVE_CAMERAS)} active camera configurations."
+            )
+
+        except Exception as e:
+            # If the database connection or query fails, log a critical error.
+            # The application may not function correctly without camera configs.
+            logger.error(
+                f"FATAL: Could not load camera configurations from database. Error: {e}"
+            )
+            # Depending on desired behavior, you might want to raise the exception
+            # to prevent the application from starting in a broken state.
+            # raise e
+        finally:
+            # The 'async for' loop ensures the session is closed automatically,
+            # but it's good practice to be explicit if needed elsewhere.
+            # await db_session.close()
+            pass
 
 
 async def detection_processor():
@@ -311,11 +185,9 @@ async def send_detections_to_database(detections: List[DetectionResult]):
 
 
 def generate_rtsp_url(camera: dict) -> List[str]:
-    """Generate possible RTSP URLs for a camera"""
     base_url = f"rtsp://{USERNAME}:{PASSWORD}@{camera['ip']}:{PORT}"
     return [
         f"{base_url}/cam/realmonitor?channel={camera['channel']}&subtype=0",  # Dahua format
-        # f"{base_url}/Streaming/Channels/{camera['channel']}01",  # Hikvision format
     ]
 
 
@@ -329,17 +201,19 @@ async def get_detections_from_service(frame: np.ndarray) -> Optional[dict]:
             return None
 
         # Prepare the file for multipart/form-data upload
-        files = {"file": ("frame.jpg", buffer.tobytes(), "image/jpeg")}
+        files = {
+            "file": (f"{datetime.now()}_frame.jpg", buffer.tobytes(), "image/jpeg")
+        }
 
         # Make the async HTTP request
         response = await async_http_client.post(YOLO_SERVICE_URL, files=files)
-
+        logger.info(f"HTTP response {response}")
         # Check for successful response
         response.raise_for_status()  # Raises an exception for 4xx/5xx errors
 
         return response.json()
 
-    except httpx.RequestError as e:
+    except ValueError as e:
         logger.error(f"HTTP request to YOLO service failed: {e}")
         return None
     except Exception as e:
@@ -347,101 +221,95 @@ async def get_detections_from_service(frame: np.ndarray) -> Optional[dict]:
         return None
 
 
+@logger.catch()
 async def capture_camera_frames(cam_id: int, camera_config: dict):
-    """Optimized background task to capture frames from a specific camera"""
-    global current_frames, stream_active, process_pool
+    """
+    Background task to capture frames, inspired by the Flask app's resilience logic.
+    """
+    global current_frames
 
-    rtsp_urls = generate_rtsp_url(camera_config)
-    cap = None
+    rtsp_urls_to_try = generate_rtsp_url(camera_config)
+    working_url = None
     last_detection_time = 0
-    frame_count = 0
 
     while stream_active:
-        # Connection logic
-        for url in rtsp_urls:
-            try:
-                cap = cv2.VideoCapture(url)
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer size
-                cap.set(cv2.CAP_PROP_FPS, VIDEO_FPS)
+        # --- Stage 1: Find a working URL (inspired by find_working_rtsp_url) ---
+        if not working_url:
+            for url in rtsp_urls_to_try:
+                try:
+                    cap_test = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+                    if cap_test.isOpened():
+                        success, _ = cap_test.read()
+                        if success:
+                            logger.success(f"Cam {cam_id}: Found working RTSP URL.")
+                            working_url = url
+                            cap_test.release()
+                            break  # Exit the URL testing loop
+                        else:
+                            logger.warning(
+                                f"Cam {cam_id}: URL opens but cannot read frames."
+                            )
+                    cap_test.release()
+                except Exception as e:
+                    logger.error(f"Cam {cam_id}: Exception during URL test: {e}")
 
-                if cap.isOpened():
-                    logger.info(f"Successfully connected to camera {cam_id} at {url}")
-                    break
-            except Exception as e:
-                logger.debug(f"Error connecting to camera {cam_id}: {str(e)}")
-                continue
+            if not working_url:
+                logger.error(
+                    f"Cam {cam_id}: No working URL found after all attempts. Retrying in 30 seconds."
+                )
+                await asyncio.sleep(30)
+                continue  # Restart the main while loop to try finding a URL again
 
-        if cap is None or not cap.isOpened():
-            logger.debug(f"Could not connect to any RTSP URL for camera {cam_id}")
-            await asyncio.sleep(5)
+        # --- Stage 2: Main Capture Loop (inspired by capture_frames) ---
+        cap = cv2.VideoCapture(working_url)
+        if not cap.isOpened():
+            logger.error(f"Cam {cam_id}: Failed to reopen working URL. Resetting...")
+            working_url = None  # Reset and go back to finding a URL
+            await asyncio.sleep(10)
             continue
 
-        try:
-            while stream_active:
-                success, frame = cap.read()
-                if not success:
-                    logger.warning(f"Frame read failed for camera {cam_id}")
-                    break
+        logger.info(f"Cam {cam_id}: Successfully connected to stream.")
+        consecutive_failures = 0
+        max_consecutive_failures = 60  # e.g., 2 seconds of dropped frames at 30fps
 
-                frame_count += 1
-                current_time = time.time()
+        while stream_active:
+            success, frame = cap.read()
 
-                # Process detection at intervals (not every frame)
-                if current_time - last_detection_time >= DETECTION_INTERVAL:
-                    try:
-                        # Resize frame for faster upload
-                        detection_frame = cv2.resize(frame, (640, 480))
+            if not success or frame is None:
+                consecutive_failures += 1
+                if consecutive_failures > max_consecutive_failures:
+                    logger.warning(
+                        f"Cam {cam_id}: Stream lost (too many failed reads). Reconnecting."
+                    )
+                    break  # Break inner loop to trigger a reconnect
+                await asyncio.sleep(0.01)  # Short sleep on frame drop
+                continue
 
-                        # Call our new function to get detections
-                        detection_result = await get_detections_from_service(
-                            detection_frame
-                        )
+            consecutive_failures = 0  # Reset on successful read
 
-                        if (
-                            detection_result
-                            and detection_result.get("person_count", 0) > 0
-                        ):
-                            now = datetime.now(timezone.utc)
-                            # Create the result object to be sent to the database
-                            db_record = DetectionResult(
-                                timestamp=now.isoformat(),
-                                camera_name=f"cam_{camera_config['location']}_{cam_id:02d}",
-                                count=detection_result["person_count"],
-                                location=camera_config["location"],
-                                day_of_week=now.strftime("%A").lower(),
-                                is_holiday=holiday_checker(),
-                                direction="Entry",  # You still need to solve this logic
-                            )
-                            await detection_queue.put(db_record)
+            # --- Frame Processing and Display (Your existing logic) ---
+            # 1. Encode frame for web streaming
+            display_frame = cv2.resize(frame, (640, 480))
+            _, buffer = cv2.imencode(
+                ".jpg", display_frame, [cv2.IMWRITE_JPEG_QUALITY, 70]
+            )
 
-                        last_detection_time = current_time
+            # Use an asyncio.Lock for safe async access to the shared dictionary
+            # async with frame_locks[cam_id]:
+            #    current_frames[cam_id] = buffer.tobytes()
 
-                    except ValueError as e:
-                        logger.error(
-                            f"Detection submission error for camera {cam_id}: {e}"
-                        )
+            # 2. Send frame for YOLO detection at intervals
+            current_time = time.time()
+            if current_time - last_detection_time >= DETECTION_INTERVAL:
+                last_detection_time = current_time
+                # This part remains the same: it calls the external yolo_service
+                detection_result = await get_detections_from_service(frame)
+                logger.info(detection_result)
 
-                # Encode frame for streaming (smaller size for web display)
-                display_frame = cv2.resize(frame, (640, 480))
-                success, buffer = cv2.imencode(
-                    ".jpg", display_frame, [cv2.IMWRITE_JPEG_QUALITY, 70]
-                )
+            await asyncio.sleep(1.0 / VIDEO_FPS)  # Control the loop speed
 
-                if success:
-                    with frame_locks[cam_id]:
-                        current_frames[cam_id] = buffer.tobytes()
-
-                # Control frame rate
-                await asyncio.sleep(1.0 / VIDEO_FPS)
-
-        except ValueError as e:
-            logger.debug(f"Error in frame capture for camera {cam_id}: {str(e)}")
-        finally:
-            if cap:
-                cap.release()
-                logger.info(f"Released capture for camera {cam_id}")
-
-        logger.info(f"Attempting to reconnect to camera {cam_id} in 5 seconds...")
+        cap.release()
+        logger.info(f"Cam {cam_id}: Capture released. Will attempt to reconnect.")
         await asyncio.sleep(5)
 
 
@@ -449,7 +317,7 @@ async def handle_detection_result(future):
     """Handle the result of YOLO detection"""
     try:
         result = await future
-        if result and result.count > 0:  # Only queue if persons detected
+        if result:  # Only queue if persons detected
             await detection_queue.put(result)
     except ValueError as e:
         logger.error(f"Error handling detection result: {str(e)}")
@@ -486,13 +354,13 @@ async def generate_frames(cam_id: int):
 
 
 router = APIRouter(
-    prefix="/camera",
+    prefix="/cameras",
     tags=["camera_detections"],
     responses={401: {"description": "Not authorized"}},
 )
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/home", response_class=HTMLResponse)
 async def index():
     """Home page with all camera feeds"""
     camera_html = "".join(
@@ -506,7 +374,7 @@ async def index():
             <img src="/video/{cam_id}" alt="Camera {cam_id} Stream" loading="lazy">
         </div>
         """
-        for cam_id, config in CAMERAS.items()
+        for cam_id, config in ACTIVE_CAMERAS.items()
     )
 
     return f"""
@@ -606,7 +474,7 @@ async def index():
             <h1>🎥 Advanced Multi-Camera Surveillance System</h1>
             <div class="stats">
                 <h3>System Status</h3>
-                <p><strong>{len(CAMERAS)}</strong> Cameras Active | 
+                <p><strong>{len(ACTIVE_CAMERAS)}</strong> Cameras Active |
                    <strong>Real-time</strong> Person Detection | 
                    <strong>AI-Powered</strong> Analytics</p>
             </div>
@@ -633,7 +501,7 @@ async def index():
 @router.get("/video/{cam_id}")
 async def video_feed(cam_id: int):
     """Video streaming endpoint for individual cameras"""
-    if cam_id not in CAMERAS:
+    if cam_id not in ACTIVE_CAMERAS:
         return Response("Camera not found", status_code=404)
 
     return StreamingResponse(
@@ -649,7 +517,7 @@ async def get_status():
     active_cameras = sum(1 for frame in current_frames.values() if frame is not None)
 
     return {
-        "total_cameras": len(CAMERAS),
+        "total_cameras": len(ACTIVE_CAMERAS),
         "active_cameras": active_cameras,
         "detection_queue_size": detection_queue.qsize(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
