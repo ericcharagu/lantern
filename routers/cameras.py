@@ -191,7 +191,7 @@ def generate_rtsp_url(camera: dict) -> List[str]:
     ]
 
 
-async def get_detections_from_service(frame: np.ndarray) -> Optional[dict]:
+async def get_detections_from_service(frame: np.ndarray, cam_id: int) -> Optional[dict]:
     """Encodes a frame and sends it to the YOLO service for detection."""
     try:
         # Encode the frame to JPEG format in memory
@@ -206,7 +206,9 @@ async def get_detections_from_service(frame: np.ndarray) -> Optional[dict]:
         }
 
         # Make the async HTTP request
-        response = await async_http_client.post(YOLO_SERVICE_URL, files=files)
+        response = await async_http_client.post(
+            YOLO_SERVICE_URL, files=files, cam_id=cam_id
+        )
         logger.info(f"HTTP response {response}")
         # Check for successful response
         response.raise_for_status()  # Raises an exception for 4xx/5xx errors
@@ -286,8 +288,6 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
                 continue
 
             consecutive_failures = 0  # Reset on successful read
-
-            # --- Frame Processing and Display (Your existing logic) ---
             # 1. Encode frame for web streaming
             display_frame = cv2.resize(frame, (640, 480))
             _, buffer = cv2.imencode(
@@ -303,7 +303,7 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
             if current_time - last_detection_time >= DETECTION_INTERVAL:
                 last_detection_time = current_time
                 # This part remains the same: it calls the external yolo_service
-                detection_result = await get_detections_from_service(frame)
+                detection_result = await get_detections_from_service(frame, cam_id)
                 logger.info(detection_result)
 
             await asyncio.sleep(1.0 / VIDEO_FPS)  # Control the loop speed
