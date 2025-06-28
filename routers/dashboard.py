@@ -30,7 +30,7 @@ class CameraUpdate(BaseModel):
 templates = Jinja2Templates(directory="templates")
 
 
-@router.get("", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 async def get_dashboard(
     request: Request, current_user: Annotated[User, Depends(require_managerial_user)]
 ):
@@ -41,7 +41,6 @@ async def get_dashboard(
     today = date.today()
 
     # Fetch and process the data
-    # TODO: remove two different types of dataset. Assuming comes as the SQL result
     raw_analytics = await get_traffic_analytics(today)
     # processed_stats = calculate_traffic_statistics(raw_analytics)
 
@@ -75,15 +74,12 @@ async def create_camera(
     name: str = Form(...),
     location: str = Form(...),
     ip_address: str = Form(...),
-    direction: Optional[str] = Form(None),
 ):
     new_camera = Camera(
         channel=channel,
         name=name,
         location=location,
         ip_address=ip_address,
-        direction=direction,
-        is_active=True,
     )
     db.add(new_camera)
     await db.commit()
@@ -99,8 +95,7 @@ async def update_camera(
     name: str = Form(...),
     location: str = Form(...),
     ip_address: str = Form(...),
-    direction: Optional[str] = Form(None),
-    is_active: bool = Form(False),
+    channel: str = Form(...),
 ):
     stmt = (
         update(Camera)
@@ -109,8 +104,7 @@ async def update_camera(
             name=name,
             location=location,
             ip_address=ip_address,
-            direction=direction,
-            is_active=is_active,
+            channel=channel,
         )
     )
     await db.execute(stmt)

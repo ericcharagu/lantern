@@ -32,7 +32,8 @@ camera_counts = defaultdict(lambda: {"in": 0, "out": 0})
 
 
 def callback(frame: np.ndarray, index: int, results: Any, model: Any) -> np.ndarray:
-    detections = sv.Detections.from_ultralytics(results)
+    listed_results = list(results)
+    detections = sv.Detections.from_ultralytics(listed_results[-1])
     detections = byte_tracker.update_with_detections(detections)
 
     annotated_frame = frame.copy()

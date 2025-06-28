@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
-import umap
+from umap import UMAP
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 from transformers import AutoImageProcessor, AutoModel
@@ -9,6 +9,7 @@ import torch
 import cv2
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
+import supervision as sv
 
 # Models
 IMAGE_EMBEDDING_MODEL = AutoModel.from_pretrained("facebook/dinov2-small")
@@ -18,7 +19,7 @@ BATCH_SIZE = 32
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Clustering
-REDUCER = umap.UMAP(n_components=3)
+REDUCER = UMAP(n_components=3)
 CLUSTERING_MODEL = KMeans(n_clusters=5)  # 5 role types
 
 # Color thresholds (HSV ranges) for uniform identification

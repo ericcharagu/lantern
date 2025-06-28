@@ -8,4 +8,6 @@ loguru
 supervision
 transformers
 tqdm
-sklearn
+scikit-learn
+umap-learn
+numpy

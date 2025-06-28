@@ -11,8 +11,8 @@ from fastapi.templating import Jinja2Templates
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field, EmailStr
-
-from utils.db.base import AsyncSession, get_db
+from sqlalchemy import select
+from utils.db.base import AsyncSession, get_db, execute_query
 
 # from utils.db.conversation_db import Conversation
 from utils.db.user_db import User, UserManager, UserGroup
@@ -92,14 +92,14 @@ def get_password_hash(password: str) -> str:
 
 def get_user(username: str) -> Optional[User]:
     db = AsyncSession()
-    user = db.query(User).filter(User.username == username).first()
+    user = """SELECT * FROM users WHERE username=:username;"""
     db.close()
     return user
 
 
 async def authenticate_user(username: str, password: str, db: AsyncSession):
-    stmt = select(User).where(User.username == username)
-    result = await db.execute(stmt)
+    existing_user_query = select(User).where(User.username == username)
+    result = await db.execute(existing_user_query)
     user = result.scalar_one_or_none()  # Use scalar_one_or_none for async
     if not user:
         return None
@@ -187,11 +187,8 @@ async def login_for_access_token(
     summary="Register a new user via API",
 )
 async def api_register_user(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
-    existing_user = (
-        db.query(User)
-        .filter((User.username == user_data.username) | (User.email == user_data.email))
-        .first()
-    )
+    existing_user_query = """SELECT * FROM users WHERE email=:user_data.email;"""
+    existing_user = execute_query(existing_user_query)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -233,7 +230,7 @@ async def login_form_submit(
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
-    user = authenticate_user(username, password, db)
+    user = await authenticate_user(username, password, db)
     if not user:
         return templates.TemplateResponse(
             "login.html",
@@ -294,7 +291,6 @@ async def register_form_submit(
         )
 
     # Determine the user group based on the checkbox
-    user_group = UserGroup.MANAGERIAL if is_managerial == "true" else UserGroup.STAFF
 
     # Process registration
     user_data = {
@@ -304,25 +300,20 @@ async def register_form_submit(
         "phone_number": phone_number if phone_number else None,
     }
     try:
-        existing_user = (
-            db.query(User)
-            .filter(
-                (User.username == user_data["username"])
-                | (User.email == user_data["email"])
-            )
-            .first()
-        )
+        # existing_user_query = """SELECT * FROM users WHERE email = :email;"""
+        # existing_user = execute_query(existing_user_query)
+        # logger.info(existing_user)
 
-        if existing_user:
-            return templates.TemplateResponse(
-                "register.html",
-                {
-                    "request": request,
-                    "error": "Username or email already exists",
-                    "form_data": user_data,  # Return form data to repopulate
-                },
-                status_code=400,
-            )
+        # if existing_user:
+        #     return templates.TemplateResponse(
+        #         "register.html",
+        #         {
+        #             "request": request,
+        #             "error": "Username or email already exists",
+        #             "form_data": user_data,  # Return form data to repopulate
+        #         },
+        #         status_code=400,
+        #     )
 
         new_user = User(
             username=user_data["username"],
@@ -330,7 +321,6 @@ async def register_form_submit(
             phone_number=user_data["phone_number"],
             password_hash=get_password_hash(user_data["password"]),
             created_at=datetime.now(timezone.utc),
-            user_group=user_group,
             is_active=True,
         )
 

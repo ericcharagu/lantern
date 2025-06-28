@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from loguru import logger
-from middleware import auth_middleware
+from middleware.auth_middleware import auth_middleware
 from config import settings
 from routers import (
     auth,
@@ -90,7 +90,7 @@ templates = Jinja2Templates(directory="templates")
 app.include_router(auth.router)
 app.include_router(cameras.router)
 app.include_router(analysis.router)
-app.include_router(webhooks.router)  # Add this once you create the file
+app.include_router(webhooks.router)
 app.include_router(internal.router)
 app.include_router(dashboard.router)
 

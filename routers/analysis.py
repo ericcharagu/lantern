@@ -17,9 +17,7 @@ router = APIRouter(
 )
 
 
-@router.post(
-    "/analyse", response_model=AnalysisJob, status_code=status.HTTP_202_ACCEPTED
-)
+@router.post("/", response_model=AnalysisJob, status_code=status.HTTP_202_ACCEPTED)
 async def start_analysis(
     request: AnalysisRequest,
     background_tasks: BackgroundTasks,

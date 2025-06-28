@@ -39,9 +39,6 @@ class User(Base):
     email = Column(String(100), unique=True, nullable=False)
     phone_number = Column(String(20), nullable=True)  # Optional phone number
     password_hash = Column(String(255), nullable=False)
-    user_group = Column(
-        SQLAlchemyEnum(UserGroup), nullable=False, default=UserGroup.STAFF
-    )
     # username = Column(String(50), unique=True, nullable=True)
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -50,10 +47,10 @@ class User(Base):
     is_active = Column(Boolean, default=True)
 
     def __repr__(self) -> str:
-        return f"<User id={self.id} email={self.email} group={self.user_group.value}>"
+        return f"<User id={self.id} email={self.email} >"
 
     # Use string reference for the relationship to avoid circular imports
-    conversations = relationship("Conversation", back_populates="user")
+    # conversations = relationship("Conversation", back_populates="user")
 
     def set_password(self, password: str) -> None:
         """Create hashed password"""

@@ -5,6 +5,8 @@ import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from ultralytics import YOLO
 from loguru import logger
+import supervision as sv
+
 from role_counter import person_role
 
 # Add logging for the YOLO server
@@ -24,10 +26,9 @@ app = FastAPI(title="Yolo11 inference")
 
 @app.post("/detect")
 @logger.catch()
-async def detect_objects(file: UploadFile = File(...), cam_id:int):
+async def detect_objects(file: UploadFile = File(...)):
     """
-    Accepts an image file, performs object detection, and returns
-    the detection results in JSON format.
+    Accept an image file, performs object detection, and returns the detection results in JSON format.
     """
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File provided is not an image.")
@@ -46,36 +47,12 @@ async def detect_objects(file: UploadFile = File(...), cam_id:int):
         # Perform inference
         detection_results = model.predict(
             frame, conf=0.6, verbose=False, classes=[0, 1, 2, 3], stream=True
-        )# Detect person, bicycle, motorbike, car
+        )  # Detect person, bicycle, motorbike, car
         # Generating the annotated image/frame to be sent back
-        labels = [
-            f"{detection_results.names[class_id]} {confidence:0.2f}"
-            for class_id, confidence
-            in zip(detections.class_id, detections.confidence)
-        ]
-
-        detections = sv.Detections.from_ultralytics(detection_results)
-        detections = byte_tracker.update_with_detections(detections)
-
-        annotated_frame = frame.copy()
-        annotated_frame = bounding_box_annotator.annotate(
-            scene=annotated_frame, detections=detections
-        )
-        annotated_frame = label_annotator.annotate(
-            scene=annotated_frame, detections=detections    )
-
-
-        #Perfom Line counts on the special cameras
-        # -- Process and Format Results ---
-        counted_role = person_role(detection_results)
-        direction=await direction(model=model, frame=np_arr, cam_id=cam_id)
 
         # Assuming clusters correspond to role types based on color
         return {
             "detections": [result.to_json() for result in detection_results],
-            "people_roles":counted_role,
-            "direction":direction,
-            "annotated_frame":annotated_frame
         }
 
     except Exception as e:
