@@ -10,9 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from loguru import logger
 
-from app.config import settings
-from app.routers import auth, cameras, analysis, webhooks  # Import all your routers
-from app.routers.cameras import (
+from config import settings
+from routers import auth, cameras, analysis, webhooks  # Import all your routers
+from routers.cameras import (
     MAX_WORKERS,
     CAMERAS,
     BATCH_SIZE,

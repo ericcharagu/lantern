@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 
 # Configure logging
 logger.add("./logs/multi-camera.log", rotation="1 week")
-with open("/run/secrets/camera_login_secrets.txt", "r") as f:
+with open("./secrets/camera_login_secrets.txt", "r") as f:
     camera_rtsp_password = f.read().strip()
 
 load_dotenv()

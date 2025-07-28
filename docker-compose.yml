@@ -39,7 +39,11 @@ services:
       - "8000:8000"
 
   ollama:
-    image: ollama/ollama:latest
+    #image: ollama/ollama:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
+    image: ollama-custom
     container_name: ollama_server
     ports:
       - "11434:11434"

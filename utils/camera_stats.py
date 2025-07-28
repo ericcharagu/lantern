@@ -29,7 +29,7 @@ class CameraTrackingData(Base):
 
 # Connection setup
 def get_connection_string():
-    with open("/run/secrets/postgres_secrets", "r") as f:
+    with open("./secrets/postgres_secrets.txt", "r") as f:
         password = f.read().strip()
 
     return f"postgresql://{os.getenv('DB_USER', 'postgres')}:{password}@{os.getenv('DB_HOST', 'postgres')}:{os.getenv('DB_PORT', 5432)}/{os.getenv('DB_NAME', 'postgres')}"

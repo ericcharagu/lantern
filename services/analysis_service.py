@@ -6,8 +6,8 @@ from loguru import logger
 from ollama import AsyncClient
 import valkey
 
-from app.schemas import AnalysisRequest
-from app.config import settings
+from schemas import AnalysisRequest
+from config import settings
 from utils.app_tools import (
     calculate_traffic_statistics,
     generate_insights,

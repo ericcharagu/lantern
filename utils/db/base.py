@@ -58,7 +58,7 @@ class MobileRequestLog(Base):
 def get_connection_string() -> str:
     """Construct the database connection string from environment variables"""
     try:
-        with open("/app/secrets/postgres_secrets.txt", "r") as f:
+        with open("./secrets/postgres_secrets.txt", "r") as f:
             password = f.read().strip()
 
         return (

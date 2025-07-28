@@ -23,3 +23,5 @@ bcrypt
 pydantic[email]
 valkey[libvalkey]
 pytest
+pydantic-settings
+ultralytics 

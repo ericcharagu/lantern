@@ -5,10 +5,12 @@ import valkey
 from ollama import AsyncClient
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status, Request
 from fastapi.responses import JSONResponse
+from fastapi import Query
+from typing import Optional
 
-from app.schemas import AnalysisRequest, AnalysisJob
-from app.dependencies import get_valkey_client, get_ollama_client
-from app.services.analysis_service import process_analysis_in_background
+from schemas import AnalysisRequest, AnalysisJob
+from dependancies import get_valkey_client, get_ollama_client
+from services.analysis_service import process_analysis_in_background
 
 router = APIRouter(
     prefix="/webhooks",
@@ -16,7 +18,7 @@ router = APIRouter(
 )
 
 
-@router.post("/webhooks", name - "recieve_whatsapp_request")
+@router.post("/webhooks", name = "recieve_whatsapp_request")
 async def process_whatsapp_request(request: Request):
 
     try:
