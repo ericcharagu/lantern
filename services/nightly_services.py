@@ -74,9 +74,9 @@ async def nightly_report_task():
     while True:
         now: datetime = datetime.now(nbo_time)
 
-        target_time: datetime = now.replace(hour=14, minute=15, second=0, microsecond=0)
+        target_time: datetime = now.replace(hour=5, minute=0, second=0, microsecond=0)
         if now > target_time:
-            target_time += timedelta(minutes=2)
+            target_time += timedelta(days=1)
         
         sleep_duration = (target_time - now).total_seconds()
         logger.info(f"Nightly reporter sleeping for {sleep_duration / 3600:.2f} hours. Will run at {target_time}.")

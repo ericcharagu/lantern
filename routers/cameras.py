@@ -63,17 +63,6 @@ CAMERAS = {
         "channel": 2,
         "name": "Inner Reception",
         "location": "Ground Floor",
-    },}
-""" CAMERAS = {
-    1: {
-        "channel": 1,
-        "name": "Third Floor Left",
-        "location": "Third Floor",
-    },
-    2: {
-        "channel": 2,
-        "name": "Inner Reception",
-        "location": "Ground Floor",
     },
     3: {
         "channel": 3,
@@ -224,7 +213,7 @@ CAMERAS = {
         "location": "First Floor",
     },
 }
- """
+ 
 detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
 current_frames: dict[int, Optional[bytes]] = {channel: None for channel in CAMERAS}
