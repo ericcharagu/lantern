@@ -72,6 +72,7 @@ class MobileRequestLog(Base):
         return f"<MobileRequestLog(id={self.id}, status={self.status}, model={self.model})>"
 
 
+# Global variables for the load camera configuration
 def get_async_connection_string() -> str:
     """Construct the ASYNCHRONOUS database connection string."""
     try:
@@ -114,8 +115,6 @@ AsyncSessionLocal = async_sessionmaker(
     autocommit=False,
 )
 
-# Refactored query functions to be async
-
 
 async def execute_query(query: str, params: dict = None) -> list:
     """Execute a read-only query and return results as list of dictionaries."""
@@ -150,19 +149,17 @@ async def bulk_insert_query(
     if not query_values:
         return
 
-    # Handle single row (convert to list)
     if isinstance(query_values, dict):
         query_values = [query_values]
 
     async with AsyncSessionLocal() as session:
         try:
-            # SQLAlchemy's `add_all` is efficient for bulk inserts
             for i in range(0, len(query_values), batch_size):
                 batch = [
                     db_table_name(**row) for row in query_values[i : i + batch_size]
                 ]
                 session.add_all(batch)
-                await session.commit()  # Commit each batch
+                await session.commit()  
             logger.info(
                 f"Successfully inserted {len(query_values)} rows into {db_table_name.__tablename__}."
             )
@@ -174,7 +171,6 @@ async def bulk_insert_query(
             raise
 
 
-# Dependency to get a DB session in FastAPI endpoints
 async def get_db() -> AsyncSession:
     """FastAPI dependency that provides an async database session."""
     async_session = AsyncSessionLocal()
@@ -183,8 +179,6 @@ async def get_db() -> AsyncSession:
     finally:
         await async_session.close()
 
-
-# Other utility functions
 async def init_db() -> None:
     """Initialize the database by creating all tables."""
     async with async_engine.begin() as conn:

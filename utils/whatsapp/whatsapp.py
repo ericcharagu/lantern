@@ -10,7 +10,7 @@ load_dotenv()
 logger.add("./logs/whatsapp.log", rotation="700 MB")
 # Configuration
 API_VERSION = "v22.0"
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+PHONE_NUMBER_ID: int = int(os.getenv("PHONE_NUMBER_ID", 0))
 
 # TODO:To be moved to secrets duting prod and when permanent Token acquired
 ACCESS_TOKEN = "EAARQrAKzcHUBO5H9PNZBj0H6eV9ZBQU3PISb7ICTYh5ZBc7OacY1YdBpEzmPNlPitS3X57u0jXdE9uQ54RDmOyDGeiF5C1dWlS0HtF61GZCpGxhzW5YvXHJiMc3IOa7srZCHDWWKuY6RcQmwEX3Ymh4ftrrxIgEicssBBYH5EHgZBP1qplPtQJKSPdtFBHnV1Q2mU6DwG6f2gRTNaCUvbc49pvY6ZA6EXZBs"
@@ -21,7 +21,7 @@ RECIPIENT_NUMBER = "+254736391323"
 
 
 @logger.catch
-def whatsapp_messenger(llm_text_output: Any):
+def whatsapp_messenger(llm_text_output: Any, recipient_number:str):
     if not ACCESS_TOKEN:
         raise ValueError("ACCESS_TOKEN is not valid")
 
@@ -35,7 +35,7 @@ def whatsapp_messenger(llm_text_output: Any):
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
-        "to": f"{RECIPIENT_NUMBER}",
+        "to": f"{recipient_number}",
         "type": "text",
         "text": {
             "body": llm_text_output,

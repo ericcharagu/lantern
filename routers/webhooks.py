@@ -1,93 +1,147 @@
-#!/usr/bin/env python3
-
+# utils/routers/webhooks.py
+from datetime import datetime, timezone
+import hashlib
+import hmac
+import os
+from typing import Any, Optional
 import uuid
-import valkey
-from ollama import AsyncClient
-from fastapi import (
-    APIRouter,
-    Depends,
-    BackgroundTasks,
-    HTTPException,
-    status,
-    Request,
-    Query,
-)
-from fastapi.responses import JSONResponse
-from typing import Optional
-from schemas import AnalysisRequest, AnalysisJob
-from dependencies import get_valkey_client, get_ollama_client
-from services.analysis_service import process_analysis_in_background
 
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
+import httpx
+from loguru import logger
+from schemas import GenerationRequest, LlmRequestPayload
+from services.analysis_service import gen_response
+from utils.text_processing import convert_llm_output_to_readable
+from utils.whatsapp.whatsapp import whatsapp_messenger
+
+# Add logging path
+logger.add("./logs/webhooks.log", rotation="1 week")
 router = APIRouter(
     prefix="/webhooks",
-    tags=["WhatsApp webhooks"],
+    tags=["Webhooks"],
 )
 
+# Ensure media directory exists
+os.makedirs("media_files", exist_ok=True)
 
-@router.post("/webhooks", name="recieve_whatsapp_request")
-async def process_whatsapp_request(request: Request):
+# Load secrets securely from environment variables
+VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN")
+with open(file="/app/secrets/whatsapp_secrets.txt", mode="r") as f:
+    APP_SECRET = f.read().strip()
+
+
+def verify_signature(payload: bytes, signature: str) -> bool:
+    """Verify the X-Hub-Signature-256 header matches the payload signature."""
+    if not APP_SECRET:
+        # If no secret is configured, skip verification (useful for dev)
+        return True
+
+    expected_signature = hmac.new(
+        key=APP_SECRET.encode("utf-8"), msg=payload, digestmod=hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(expected_signature, signature)
+
+
+async def process_message_in_background(
+    request: Request,
+    user_message: str,
+    user_number: str,
+ 
+):
+    """This function runs in the background to process and respond to messages."""
+    logger.info(f"Background task started for user {user_number}.")
+    try:
+
+        llm_messages=[{"role": "user","content":user_message }]
+        llm_response = await gen_response(messages=llm_messages)
+        logger.info(llm_response)
+        if not llm_response or "message" not in llm_response:
+            logger.error(f"Received invalid or None response from LLM pipeline for user {user_number}.")
+            # Send a generic error message
+            whatsapp_messenger(
+                llm_text_output="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
+                recipient_number=user_number
+            )
+            return
+        content: str = llm_response.get("message", {}).get("content", "")
+        if not content:
+             logger.warning(f"LLM returned empty content for user {user_number}. Sending fallback.")
+             content = "I'm not sure how to respond to that. Could you please rephrase your request?"
+        cleaned_response = convert_llm_output_to_readable(content)
+        whatsapp_messenger(
+            llm_text_output=cleaned_response, recipient_number=user_number
+        )
+        logger.success(f"Response {cleaned_response} sent to {user_number}.")
+    except ValueError as e:
+        logger.error(f"Background task failed for {user_number}: {e}", exc_info=True)
+
+
+@router.get("")
+async def verify_whatsapp_webhook(
+    hub_mode: str = Query(None, alias="hub.mode"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
+    hub_challenge: str = Query(None, alias="hub.challenge"),
+):
+    """Handles webhook verification for the WhatsApp platform."""
+    if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
+        return PlainTextResponse(content=hub_challenge, status_code=200)
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+
+@router.post("")
+async def handle_whatsapp_message(request: Request, background_tasks: BackgroundTasks):
+    """Handles incoming messages from WhatsApp."""
+    # signature = (
+    #     request.headers.get("x-hub-signature-256", "").split("sha256=")[-1].strip()
+    # )
+    # if not verify_signature(await request.body(), signature):
+    #     raise HTTPException(status_code=403, detail="Invalid signature")
 
     try:
-        # Get JSON data from request
         data = await request.json()
+        if not data.get("entry"):
+            raise HTTPException(status_code=400, detail="Invalid payload structure")
+        value = data["entry"][0]["changes"][0].get("value", {})
+        if not value:
+            return PlainTextResponse("OK")
 
-        if not data:
-            raise HTTPException(status_code=400, detail="Empty payload")
+        user_message: str = ""
+        media_id: str = ""
+        user_number: str = ""
+        image_caption: str = ""
+        for entry in data.get("entry", []):
+            for change in entry.get("changes", []):
+                contact_info = change.get("value", {}).get("contacts", [])
+                if contact_info:
+                    user_number = contact_info[0].get("wa_id")
+                messages = change.get("value", {}).get("messages", [])
+                if messages and messages[0].get("type") == "text":
+                    user_message = messages[0].get("text", {}).get("body")
+                    break
+            if user_message or media_id:
+                break
 
-        print("Received data:", data)  # For debugging
+        if not (user_message or media_id):
+            logger.info("Webhook received, but no processable text message found.")
+            return PlainTextResponse("No text message found", status_code=200)
 
-        # Extract message information and return as dict
-        entries = data.get("entry", [])
-        test_message = {
-            "prompt": "",
-            "prompt_timestamp": datetime.now(timezone.utc),
-        }
-
-        for entry in entries:
-            changes = entry.get("changes", [])
-            for change in changes:
-                value = change.get("value", {})
-                messages = value.get("messages", [])
-
-                for message in messages:
-                    if message.get("type") == "text":
-                        message_info = {
-                            "sender_profile_id": message.get("from"),
-                            "prompt": message.get("text").get("body", " "),
-                            "message_id": message.get("id"),
-                            "prompt_timestamp": message.get("timestamp"),
-                        }
-                        test_message.update(message_info)
-        mobile_request = GenerationRequest(**test_message)
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": mobile_request.prompt},
-        ]
-        # Generate request to ollama client with unique request ID to avoid reprocessing
-        response_json = await process_request(
-            mobile_request=mobile_request, messages=messages
+        # Queue the processing and response to happen in the background
+        background_tasks.add_task(
+            process_message_in_background,
+            request,
+            user_message,
+            user_number,
         )
-        whatsapp_messenger(response_json.get("response", "No response generated"))
-        # Log the interaction
-        await single_insert_query(MobileRequestLog, response_json)
 
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+        logger.info(
+            f"Webhook from {user_number} acknowledged and queued for processing."
+        )
+        return PlainTextResponse("Message processed", status_code=200)
+
     except ValueError as e:
-        print(f"Error processing request: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/webhooks", name="verify_whatsapp_request")
-async def verify_whatsapp_request(
-    hub_mode: Optional[str] = Query(None, alias="hub.mode"),
-    hub_verify_token: Optional[str] = Query(None, alias="hub.verify_token"),
-    hub_challenge: Optional[str] = Query(None, alias="hub.challenge"),
-):
-    if hub_mode and hub_verify_token:
-        if hub_mode == "subscribe" and hub_verify_token == WHATSAPP_VERIFCATION_TOKEN:
-            return PlainTextResponse(content=hub_challenge, status_code=200)
-        else:
-            raise HTTPException(status_code=403, detail="Verification failed")
-    else:
-        raise HTTPException(status_code=400, detail="Missing parameters")
+        logger.error(f"Error processing request {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error processing request: {str(e)}"
+        )

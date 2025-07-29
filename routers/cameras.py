@@ -5,7 +5,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Optional, Any
 
 import cv2
 import httpx
@@ -25,6 +25,7 @@ load_dotenv()
 # Constants
 USERNAME = os.getenv("CAMERA_RTSP_USERNAME")
 PASSWORD = camera_rtsp_password
+NVR_IP_ADDRESS=os.getenv("NVR_IP_ADDRESS", "192.168.2.200")
 PORT = 554
 VIDEO_FPS = 30
 DETECTION_INTERVAL = 1.0  # Process detection every 1 second
@@ -43,7 +44,7 @@ class DetectionResult:
     is_holiday: bool
     direction: str
     # confidence_scores: int
-    # bounding_boxes: List[List[float]]
+    # bounding_boxes: list[list[float]]
 
 
 TEST_DIRECTION = "Entry"
@@ -55,85 +56,82 @@ async_http_client = httpx.AsyncClient(timeout=10.0)
 CAMERAS = {
     1: {
         "channel": 1,
-        "ip": "192.168.1.151",
         "name": "Third Floor Left",
         "location": "Third Floor",
     },
     2: {
         "channel": 2,
-        "ip": "192.168.1.151",
+        "name": "Inner Reception",
+        "location": "Ground Floor",
+    },}
+""" CAMERAS = {
+    1: {
+        "channel": 1,
+        "name": "Third Floor Left",
+        "location": "Third Floor",
+    },
+    2: {
+        "channel": 2,
         "name": "Inner Reception",
         "location": "Ground Floor",
     },
     3: {
         "channel": 3,
-        "ip": "192.168.1.151",
         "name": "Exit Gate Wall",
         "location": "exit_gate",
     },
     4: {
         "channel": 4,
-        "ip": "192.168.1.151",
         "name": "Main Gate",
         "location": "main_entrance",
     },
     5: {
         "channel": 5,
-        "ip": "192.168.1.151",
         "name": "Third Floor Right",
         "location": "Third Floor",
     },
     6: {
         "channel": 6,
-        "ip": "192.168.1.151",
         "name": "First Floor Right",
         "location": "First Floor",
     },
     7: {
         "channel": 7,
-        "ip": "192.168.1.151",
         "name": "Ground Floor Right",
         "location": "Ground Floor",
     },
     8: {
         "channel": 8,
-        "ip": "192.168.1.151",
         "name": "Second Floor Right",
         "location": "Second Floor",
     },
     10: {
         "channel": 10,
-        "ip": "192.168.1.151",
         "name": "Main Entrance",
         "location": "main_entrance",
     },
     11: {
         "channel": 11,
-        "ip": "192.168.1.151",
         "name": "First Floor Stairs",
         "location": "First Floor",
     },
     12: {
         "channel": 12,
-        "ip": "192.168.1.151",
         "name": "Third Floor Stairs",
         "location": "Third Floor",
     },
     13: {
         "channel": 13,
-        "ip": "192.168.1.151",
         "name": "Front Left",
         "location": "Ground Floor",
     },
     14: {
         "channel": 14,
-        "ip": "192.168.1.151",
         "name": "Floor Right",
         "location": "Ground Floor",
     },
     15: {
         "channel": 15,
-        "ip": "192.168.1.151",
         "name": "Borehole",
         "location": "Borehole",
     },
@@ -145,107 +143,92 @@ CAMERAS = {
     #   },
     17: {
         "channel": 17,
-        "ip": "192.168.1.151",
         "name": "Fourth Floor Stairs",
         "location": "Fourth Floor",
     },
     18: {
         "channel": 18,
-        "ip": "192.168.1.151",
         "name": "Fourth Floor Left",
         "location": "Fourth Floor",
     },
     19: {
         "channel": 19,
-        "ip": "192.168.1.151",
         "name": "Ground Floor Stairs",
         "location": "Ground Floor",
     },
     20: {
         "channel": 20,
-        "ip": "192.168.1.151",
         "name": "Fourth Floor Right",
         "location": "Fourth Floor",
     },
     21: {
         "channel": 21,
-        "ip": "192.168.1.151",
         "name": "Exit Gate",
         "location": "exit_gate",
     },
     # Fish Eye with the altered_view
     # 22: {
     #    "channel": 22,
-    #    "ip": "192.168.1.151",
+    # 
     #    "name": "Twentieth Flight",
     #    "location": "stairway_20",
     # },
     23: {
         "channel": 23,
-        "ip": "192.168.1.151",
         "name": "Restaurant 1",
         "location": "restaurant",
     },
     24: {
         "channel": 24,
-        "ip": "192.168.1.151",
         "name": "Second Floor Stairs",
         "location": "Second Floor",
     },
     25: {
         "channel": 25,
-        "ip": "192.168.1.151",
         "name": "Kitchen",
         "location": "restaurant",
     },
     26: {
         "channel": 26,
-        "ip": "192.168.1.151",
         "name": "Staff Entrance",
         "location": "yard",
     },
     27: {
         "channel": 27,
-        "ip": "192.168.1.151",
         "name": "Rear Wall",
         "location": "yard",
     },
     28: {
         "channel": 28,
-        "ip": "192.168.1.151",
         "name": "Server Room",
         "location": "Second Floor",
     },
     29: {
         "channel": 29,
-        "ip": "192.168.1.151",
         "name": "Restaurant 2",
         "location": "restaurant",
     },
     30: {
         "channel": 30,
-        "ip": "192.168.1.151",
         "name": "Reception",
         "location": "Ground Floor",
     },
     31: {
         "channel": 31,
-        "ip": "192.168.1.151",
         "name": "Ground Floor Left",
         "location": "Ground Floor",
     },
     32: {
         "channel": 32,
-        "ip": "192.168.1.151",
         "name": "First Floor Left",
         "location": "First Floor",
     },
 }
-
+ """
 detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
-current_frames: Dict[int, Optional[bytes]] = {cam_id: None for cam_id in CAMERAS}
-frame_locks: Dict[int, Lock] = {cam_id: Lock() for cam_id in CAMERAS}
+current_frames: dict[int, Optional[bytes]] = {channel: None for channel in CAMERAS}
+frame_locks: dict[int, Any] = {channel: asyncio.Lock() for channel in CAMERAS}
 
 
 async def load_camera_configurations():
@@ -316,9 +299,6 @@ async def load_camera_configurations():
             await db_session.close()
 
 
-logger.info(load_cameras_configurations())
-
-
 async def detection_processor():
     """Background task to process detection queue and send to database"""
     batch = []
@@ -348,10 +328,10 @@ async def detection_processor():
             await asyncio.sleep(1)
 
 
-async def send_detections_to_database(detections: List[DetectionResult]):
+async def send_detections_to_database(detections: list[DetectionResult]):
     """Send detection batch to PostgreSQL database."""
     try:
-        logger.info(f"received detections {detctions}")
+        logger.info(f"received detections {detections}")
         detection_dicts = [asdict(detection) for detection in detections]
         # Placeholder for database insertion
         logger.info(f"Sending {len(detections)} detections to database")
@@ -363,8 +343,8 @@ async def send_detections_to_database(detections: List[DetectionResult]):
         logger.error(f"Database insertion error: {str(e)}")
 
 
-def generate_rtsp_url(camera: dict) -> List[str]:
-    base_url = f"rtsp://{USERNAME}:{PASSWORD}@{camera['ip']}:{PORT}"
+def generate_rtsp_url(camera: dict) -> list[str]:
+    base_url = f"rtsp://{USERNAME}:{PASSWORD}@{NVR_IP_ADDRESS}:{PORT}"
     return [
         f"{base_url}/cam/realmonitor?channel={camera['channel']}&subtype=0",  # Dahua format
     ]
@@ -386,16 +366,19 @@ async def get_detections_from_service(frame: np.ndarray) -> Optional[dict]:
 
         # Make the async HTTP request
         response = await async_http_client.post(YOLO_SERVICE_URL, files=files)
-        # Check for successful response
-        response.raise_for_status()  # Raises an exception for 4xx/5xx errors
+        logger.info(response.json())
+        if response:
+            # Check for successful response
+            response.raise_for_status()  # Raises an exception for 4xx/5xx errors
 
-        return response.json()
-
+            return response
+        else:
+            pass
     except ValueError as e:
-        logger.error(f"HTTP request to YOLO service failed: {e}")
+        logger.debug(f"HTTP request to YOLO service failed: {e}")
         return None
     except Exception as e:
-        logger.error(f"An unexpected error occurred when calling YOLO service: {e}")
+        logger.debug(f"An unexpected error occurred when calling YOLO service: {e}")
         return None
 
 
@@ -478,7 +461,6 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
             current_time = time.time()
             if current_time - last_detection_time >= DETECTION_INTERVAL:
                 last_detection_time = current_time
-                # This part remains the same: it calls the external yolo_service
                 detection_result = await get_detections_from_service(frame)
                 logger.info(detection_result)
 
@@ -502,7 +484,7 @@ async def handle_detection_result(future):
 async def generate_frames(cam_id: int):
     """Generator function for streaming frames"""
     while True:
-        with frame_locks[cam_id]:
+        async with frame_locks[cam_id]:
             frame = current_frames[cam_id]
 
         if frame:

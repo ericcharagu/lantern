@@ -209,3 +209,26 @@ async def get_traffic_summary(target_date: datetime) -> dict:
     except ValueError as e:
         logger.debug(f"Results misisng for the date due to {e}")
         return {}
+
+
+# TODO:Use the sql database to query data from 10pm - 4:50 am. Report to be sent out at 5am
+async def get_nightly_report(target_date: datetime) -> dict:
+    """Get a quick traffic summary - ultra-optimized single query."""
+    try:
+        query = """
+    SELECT
+        COUNT(*) AS total_records,
+        SUM(count) AS total_traffic,
+        ROUND(AVG(count::NUMERIC), 2) AS avg_traffic,
+        MAX(count) AS peak_traffic,
+        COUNT(DISTINCT location) AS unique_locations,
+        COUNT(DISTINCT camera_name) AS active_cameras,
+    FROM camera_traffic
+    WHERE DATE(timestamp) = :target_date;
+    """
+
+        result = await execute_query(query, {"target_date": target_date})
+        return result[0]
+    except ValueError as e:
+        logger.debug(f"Results misisng for the date due to {e}")
+        return {}

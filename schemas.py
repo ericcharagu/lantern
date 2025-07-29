@@ -51,6 +51,9 @@ class GenerationRequest(BaseModel):
     sender_profile_id: str
     prompt_id: str
 
+class LlmRequestPayload(BaseModel):
+    user_message:str 
+    user_number:str
 
 class ConversationData(BaseModel):
     user_message: Any

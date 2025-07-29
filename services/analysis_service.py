@@ -2,6 +2,7 @@
 import json
 from datetime import date, datetime, timezone
 
+from dependencies import ollama_client
 from loguru import logger
 from ollama import AsyncClient
 import valkey
@@ -15,13 +16,16 @@ from utils.app_tools import (
 )
 from utils.report_format import ModernPDFGenerator
 from prompts import PROMPT_REPORT_ANALYST
-
+import os
 pdf_generator = ModernPDFGenerator()
 
-
-async def gen_response(ollama_client: AsyncClient, messages: list[dict]):
+ollama_client=AsyncClient(os.getenv("OLLAMA_HOST"))
+async def gen_response(messages: list[dict]):
     return await ollama_client.chat(
-        model=settings.LLM_MODEL_ID, messages=messages, options={"temperature": 0.6}
+        model=settings.LLM_MODEL_ID, messages=messages, options={"temperature": 0.5,                 "top_p": 0.95,
+                "top_k": 20,
+                "min_p": 0,
+                "repeat_penalty": 1,}
     )
 
 

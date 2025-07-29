@@ -7,7 +7,7 @@ from ultralytics import YOLO
 from loguru import logger
 import supervision as sv
 
-from role_counter import person_role
+# from role_counter import person_role
 
 # Add logging for the YOLO server
 logger.add("./logs/yolo_app.log", rotation="1 week")
@@ -27,9 +27,7 @@ app = FastAPI(title="Yolo11 inference")
 @app.post("/detect")
 @logger.catch()
 async def detect_objects(file: UploadFile = File(...)):
-    """
-    Accept an image file, performs object detection, and returns the detection results in JSON format.
-    """
+    """Accept an image file, performs object detection, and returns the detection results in JSON format."""
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File provided is not an image.")
 
@@ -49,7 +47,6 @@ async def detect_objects(file: UploadFile = File(...)):
             frame, conf=0.6, verbose=False, classes=[0, 1, 2, 3], stream=True
         )  # Detect person, bicycle, motorbike, car
         # Generating the annotated image/frame to be sent back
-
         # Assuming clusters correspond to role types based on color
         return {
             "detections": [result.to_json() for result in detection_results],
@@ -64,4 +61,5 @@ async def detect_objects(file: UploadFile = File(...)):
 
 @app.get("/health")
 def health_check():
+    """Check the health of the service."""
     return {"status": "ok"}
