@@ -5,11 +5,12 @@ from jose import JWTError, jwt
 import os
 from dotenv import load_dotenv
 
-#load env variables
+# load env variables
 load_dotenv()
-with open ("/app/secrets/skey.txt", "r") as f:
-    secret_key=f.read().strip
-ALGORITHIM="HS256"
+with open("./secrets/request_secrets.txt", "r") as f:
+    secret_key = f.read().strip
+ALGORITHIM = "HS256"
+
 
 async def auth_middleware(request: Request, call_next):
     # List of public routes that don't require authentication
@@ -20,7 +21,8 @@ async def auth_middleware(request: Request, call_next):
         "/webhooks",
         "/static",  # Allow static files
         "/analyse",
-        "/health"
+        "/health",
+        "/",
     ]
 
     # Skip auth check for public routes
@@ -31,10 +33,7 @@ async def auth_middleware(request: Request, call_next):
     token = request.cookies.get("access_token")
     if not token:
         if request.url.path.startswith("/api"):
-            raise HTTPException(
-                status_code=401,
-                detail="Not authenticated"
-            )
+            raise HTTPException(status_code=401, detail="Not authenticated")
         return RedirectResponse(url="/auth/login")
 
     try:
@@ -42,15 +41,12 @@ async def auth_middleware(request: Request, call_next):
         payload = jwt.decode(
             token.split()[1],  # Remove "Bearer " prefix
             os.getenv("SECRET_KEY"),
-            algorithms=[os.getenv("ALGORITHM")]
+            algorithms=[os.getenv("ALGORITHM")],
         )
         request.state.user = payload.get("sub")
     except JWTError:
         if request.url.path.startswith("/api"):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid token"
-            )
+            raise HTTPException(status_code=401, detail="Invalid token")
         response = RedirectResponse(url="/auth/login")
         response.delete_cookie("access_token")
         return response

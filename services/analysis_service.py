@@ -2,6 +2,7 @@
 import json
 from datetime import date, datetime, timezone
 
+from dependencies import ollama_client
 from loguru import logger
 from ollama import AsyncClient
 import valkey
@@ -13,21 +14,20 @@ from utils.app_tools import (
     generate_insights,
     create_recommendations,
 )
-from utils.camera_stats import CameraStats
-from utils.db.stats_db import get_traffic_analytics
 from utils.report_format import ModernPDFGenerator
-
-# ... other necessary imports like SYSTEM_PROMPT (which could also be in config)
-
-# Assume SYSTEM_PROMPT is defined here or imported from a config/constants file
-SYSTEM_PROMPT = "You are a Foot Traffic Analytics Specialist..."
-
+from prompts import PROMPT_REPORT_ANALYST
+import os
 pdf_generator = ModernPDFGenerator()
 
-
-async def gen_response(ollama_client: AsyncClient, messages: list[dict]):
+ollama_client=AsyncClient(settings.OLLAMA_HOST)
+async def gen_response(messages: list[dict]):
     return await ollama_client.chat(
-        model=settings.LLM_MODEL_ID, messages=messages, options={"temperature": 0.6}
+        model=settings.LLM_MODEL_ID, messages=messages, options={
+            "temperature": 0.5,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0,
+            "repeat_penalty": 1,}
     )
 
 
@@ -55,25 +55,65 @@ async def process_analysis_in_background(
         stats = calculate_traffic_statistics(sql_daily_results)
         insights = generate_insights(stats, request.building_stats)
         recommendations = create_recommendations(stats, request.building_stats)
-
-        # ... more logic from the original function ...
-
+        # Prepare data for LLM analysis
+        analysis_context = {
+            "camera_detection_stats": await camera_stats.get_detection_counts(),
+            "camera_confidence_stats": await camera_stats.get_confidence_stats(),
+            "camera_movement_stats": [
+                await camera_stats.get_movement_stats(camera_id=i) for i in range(32)
+            ],
+            "statistics": stats,
+            "insights": insights,
+            "recommendations": recommendations,
+            "building_info": (
+                request.building_stats.model_dump() if request.building_stats else None
+            ),
+            "data_points": len(request.traffic_data),
+        }
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": "Analyze..."},
+            {"role": "system", "content": PROMPT_REPORT_ANALYST},
+            {
+                "role": "user",
+                "content": f"""Analyze ANALYSIS_CONTEXT:
+                    {json.dumps(analysis_context, indent=2, default=str), sql_daily_results}
+
+                    ANALYSIS PERIOD: {request.analysis_period}
+                    BUILDING TYPE: {request.building_stats.building_type if request.building_stats else "Not specified"}
+                    """,
+            },
         ]
-        response = await gen_response(ollama_client, messages)
-        llm_report = response.get("message", {}).get(
-            "content", "Unable to generate LLM analysis"
-        )
 
+        response = await gen_response(messages)
+        # Extract response content
+        if "message" in response and "content" in response["message"]:
+            llm_report = response["message"]["content"]
+        else:
+            llm_report = "Unable to generate LLM analysis"
+
+        # Compile final response
         analysis_result = {
-            "detailed_report": llm_report,
+            "executive_summary": {
+                "total_traffic": stats.get("total_traffic", 0),
+                "analysis_period": request.analysis_period,
+                "data_points_analyzed": len(request.traffic_data),
+                "building_info": (
+                    request.building_stats.dict() if request.building_stats else None
+                ),
+            },
             "raw_statistics": stats,
-        }  # simplified for example
-
-        # ... generate PDF, etc. ...
-
+            "key_insights": insights,
+            "recommendations": recommendations,
+            "detailed_report": clean_text_remove_think_tags(llm_report),
+            "analysis_metadata": {
+                "generated_at": datetime.now(timezone.utc),
+                "model_used": llm_model_id,
+                "include_predictions": request.include_predictions,
+            },
+        }
+        # Generate PDF
+        output_file = pdf_generator.generate_pdf(
+            analysis_result, f"./utils/reports/Traffic_report_{today}.pdf"
+        )
         final_status = {"status": "completed", "result": analysis_result}
         valkey_client.set(
             f"job:{job_id}", json.dumps(final_status, default=str), ex=3600

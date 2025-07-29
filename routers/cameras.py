@@ -1,35 +1,33 @@
 import asyncio
 import multiprocessing as mp
+import os
 import time
-from concurrent.futures import ProcessPoolExecutor
-from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, Any
 
 import cv2
+import httpx
 import numpy as np
-import uvicorn
-from fastapi import FastAPI, Response, APIRouter
+from dotenv import load_dotenv
+from fastapi import APIRouter, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from loguru import logger
-from ultralytics import YOLO
 from utils.db.base import CameraTraffic, bulk_insert_query
 from utils.holidays import holiday_checker
-import os
-from dotenv import load_dotenv
 
 # Configure logging
 logger.add("./logs/multi-camera.log", rotation="1 week")
 with open("./secrets/camera_login_secrets.txt", "r") as f:
+
+
     camera_rtsp_password = f.read().strip()
-
 load_dotenv()
-
 # Constants
 USERNAME = os.getenv("CAMERA_RTSP_USERNAME")
 PASSWORD = camera_rtsp_password
+NVR_IP_ADDRESS=os.getenv("NVR_IP_ADDRESS")
 PORT = 554
 VIDEO_FPS = 30
 DETECTION_INTERVAL = 1.0  # Process detection every 1 second
@@ -48,267 +46,180 @@ class DetectionResult:
     is_holiday: bool
     direction: str
     # confidence_scores: int
-    # bounding_boxes: List[List[float]]
+    # bounding_boxes: list[list[float]]
 
 
-# TODO:Denote cameras with direction implicatins such as the entrances and exits.
-# TODO: Create separate tables/columns for each of those "special" data types. Consider storing them in a separate table that can house the additional metrics
 TEST_DIRECTION = "Entry"
-# Camera configuration dictionary
+# Process pool for YOLO inference
+YOLO_SERVICE_URL = "http://yolo_service:5000/detect"
+
+# Create a single, reusable async client for performance
+async_http_client = httpx.AsyncClient(timeout=10.0)
 CAMERAS = {
     1: {
         "channel": 1,
-        "ip": "192.168.1.79",
-        "name": "Borehole",
-        "location": "borehole_area",
+        "name": "Third Floor Left",
+        "location": "Third Floor",
     },
     2: {
         "channel": 2,
-        "ip": "192.168.1.199",
-        "name": "Borehole",
-        "location": "borehole_area",
+        "name": "Inner Reception",
+        "location": "Ground Floor",
     },
     3: {
         "channel": 3,
-        "ip": "192.168.1.67",
         "name": "Exit Gate Wall",
         "location": "exit_gate",
     },
     4: {
         "channel": 4,
-        "ip": "192.168.1.139",
         "name": "Main Gate",
         "location": "main_entrance",
     },
     5: {
         "channel": 5,
-        "ip": "192.168.1.78",
-        "name": "Third Flight",
-        "location": "stairway_03",
+        "name": "Third Floor Right",
+        "location": "Third Floor",
     },
     6: {
         "channel": 6,
-        "ip": "192.168.1.66",
-        "name": "Fourth Flight",
-        "location": "stairway_04",
+        "name": "First Floor Right",
+        "location": "First Floor",
     },
     7: {
         "channel": 7,
-        "ip": "192.168.1.197",
-        "name": "Fifth Flight",
-        "location": "stairway_05",
+        "name": "Ground Floor Right",
+        "location": "Ground Floor",
     },
     8: {
         "channel": 8,
-        "ip": "192.168.1.75",
-        "name": "Sixth Flight",
-        "location": "stairway_06",
-    },
-    9: {
-        "channel": 9,
-        "ip": "192.168.1.73",
-        "name": "Seventh Flight",
-        "location": "stairway_07",
+        "name": "Second Floor Right",
+        "location": "Second Floor",
     },
     10: {
         "channel": 10,
-        "ip": "192.168.1.74",
-        "name": "Eighth Flight",
-        "location": "stairway_08",
+        "name": "Main Entrance",
+        "location": "main_entrance",
     },
     11: {
         "channel": 11,
-        "ip": "192.168.1.82",
-        "name": "Ninth Flight",
-        "location": "stairway_09",
+        "name": "First Floor Stairs",
+        "location": "First Floor",
     },
     12: {
         "channel": 12,
-        "ip": "192.168.1.77",
-        "name": "Tenth Flight",
-        "location": "stairway_10",
+        "name": "Third Floor Stairs",
+        "location": "Third Floor",
     },
     13: {
         "channel": 13,
-        "ip": "192.168.1.70",
-        "name": "Eleventh Flight",
-        "location": "stairway_11",
+        "name": "Front Left",
+        "location": "Ground Floor",
     },
     14: {
         "channel": 14,
-        "ip": "192.168.1.81",
-        "name": "Twelfth Flight",
-        "location": "stairway_12",
+        "name": "Floor Right",
+        "location": "Ground Floor",
     },
     15: {
         "channel": 15,
-        "ip": "192.168.1.89",
-        "name": "Thirteenth Flight",
-        "location": "stairway_13",
+        "name": "Borehole",
+        "location": "Borehole",
     },
-    16: {
-        "channel": 16,
-        "ip": "192.168.1.90",
-        "name": "Fourteenth Flight",
-        "location": "stairway_14",
-    },
+    #  16: {
+    #        "channel": 16,
+    #       "ip": "192.168.1.90",
+    #       "name": "Fourteenth Flight",
+    #       "location": "stairway_14",
+    #   },
     17: {
         "channel": 17,
-        "ip": "192.168.1.137",
-        "name": "Fifteenth Flight",
-        "location": "stairway_15",
+        "name": "Fourth Floor Stairs",
+        "location": "Fourth Floor",
     },
     18: {
         "channel": 18,
-        "ip": "192.168.1.136",
-        "name": "Sixteenth Flight",
-        "location": "stairway_16",
+        "name": "Fourth Floor Left",
+        "location": "Fourth Floor",
     },
     19: {
         "channel": 19,
-        "ip": "192.168.1.202",
-        "name": "Seventeenth Flight",
-        "location": "stairway_17",
+        "name": "Ground Floor Stairs",
+        "location": "Ground Floor",
     },
     20: {
         "channel": 20,
-        "ip": "192.168.1.72",
-        "name": "Eighteenth Flight",
-        "location": "stairway_18",
+        "name": "Fourth Floor Right",
+        "location": "Fourth Floor",
     },
     21: {
         "channel": 21,
-        "ip": "192.168.1.129",
-        "name": "Nineteenth Flight",
-        "location": "stairway_19",
+        "name": "Exit Gate",
+        "location": "exit_gate",
     },
-    22: {
-        "channel": 22,
-        "ip": "192.168.1.116",
-        "name": "Twentieth Flight",
-        "location": "stairway_20",
-    },
+    # Fish Eye with the altered_view
+    # 22: {
+    #    "channel": 22,
+    # 
+    #    "name": "Twentieth Flight",
+    #    "location": "stairway_20",
+    # },
     23: {
         "channel": 23,
-        "ip": "192.168.1.190",
-        "name": "Twenty-first Flight",
-        "location": "stairway_21",
+        "name": "Restaurant 1",
+        "location": "restaurant",
     },
     24: {
         "channel": 24,
-        "ip": "192.168.1.135",
-        "name": "Twenty-second Flight",
-        "location": "stairway_22",
+        "name": "Second Floor Stairs",
+        "location": "Second Floor",
     },
     25: {
         "channel": 25,
-        "ip": "192.168.1.103",
-        "name": "Twenty-third Flight",
-        "location": "stairway_23",
+        "name": "Kitchen",
+        "location": "restaurant",
     },
     26: {
         "channel": 26,
-        "ip": "192.168.1.61",
-        "name": "Twenty-fourth Flight",
-        "location": "stairway_24",
+        "name": "Staff Entrance",
+        "location": "yard",
     },
     27: {
         "channel": 27,
-        "ip": "192.168.1.71",
-        "name": "Twenty-fifth Flight",
-        "location": "stairway_25",
+        "name": "Rear Wall",
+        "location": "yard",
     },
     28: {
         "channel": 28,
-        "ip": "192.168.1.102",
-        "name": "Twenty-sixth Flight",
-        "location": "stairway_26",
+        "name": "Server Room",
+        "location": "Second Floor",
     },
     29: {
         "channel": 29,
-        "ip": "192.168.1.68",
-        "name": "Twenty-seventh Flight",
-        "location": "stairway_27",
+        "name": "Restaurant 2",
+        "location": "restaurant",
     },
     30: {
         "channel": 30,
-        "ip": "192.168.1.120",
-        "name": "Twenty-eighth Flight",
-        "location": "stairway_28",
+        "name": "Reception",
+        "location": "Ground Floor",
     },
     31: {
         "channel": 31,
-        "ip": "192.168.1.69",
-        "name": "Twenty-ninth Flight",
-        "location": "stairway_29",
+        "name": "Ground Floor Left",
+        "location": "Ground Floor",
     },
     32: {
         "channel": 32,
-        "ip": "192.168.1.76",
-        "name": "Thirtieth Flight",
-        "location": "stairway_30",
+        "name": "First Floor Left",
+        "location": "First Floor",
     },
 }
-
-# Global variables for frame and detection management
-current_frames: Dict[int, Optional[bytes]] = {cam_id: None for cam_id in CAMERAS}
-frame_locks: Dict[int, Lock] = {cam_id: Lock() for cam_id in CAMERAS}
+ 
 detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
-
-# Process pool for YOLO inference
-process_pool = None
-
-# Declaring the onject detection mdel to be used
-object_detection_model = None
-
-
-def process_yolo_detection(
-    frame_data: Tuple[np.ndarray, int, str, str],
-) -> Optional[DetectionResult]:
-    """Process YOLO detection in a separate process"""
-    global object_detection_model
-    try:
-        # Lazy-load the model once per worker process
-        if object_detection_model is None:
-            object_detection_model = YOLO("yolo11l.pt")
-            logger.info(f"YOLO model loaded in process {mp.current_process().pid}")
-
-        frame, cam_id, camera_name, location = frame_data
-
-        results = object_detection_model.predict(
-            frame, conf=0.6, classes=[0], verbose=False
-        )
-        if len(results) > 0 and len(results[0].boxes) > 0:
-            boxes = results[0].boxes
-            person_detections = boxes[boxes.cls == 0]  # Filter for persons only
-
-            count = len(person_detections)
-            # confidence_scores = (
-            #     person_detections.conf.cpu().numpy().tolist() if count > 0 else []
-            # )
-            # bounding_boxes = (
-            #    person_detections.xyxy.cpu().numpy().tolist() if count > 0 else []
-            # )
-
-            now = datetime.now(timezone.utc)
-
-            return DetectionResult(
-                timestamp=now.isoformat(),
-                camera_name=f"cam_{location}_{cam_id:02d}",
-                count=count,
-                location=location,
-                day_of_week=now.strftime("%A").lower(),
-                is_holiday=holiday_checker(),
-                direction=TEST_DIRECTION,
-                # confidence_scores=confidence_scores,
-                # bounding_boxes=bounding_boxes,
-            )
-    except ValueError as e:
-        logger.error(f"YOLO processing error for camera {cam_id}: {str(e)}")
-
-    return None
-
+current_frames: dict[int, Optional[bytes]] = {channel: None for channel in CAMERAS}
+frame_locks: dict[int, Any] = {channel: asyncio.Lock() for channel in CAMERAS}
 
 async def detection_processor():
     """Background task to process detection queue and send to database"""
@@ -329,6 +240,7 @@ async def detection_processor():
             current_time = time.time()
             if (len(batch) >= 10) or (batch and (current_time - last_batch_time) > 30):
                 if batch:
+                    logger.info(batch)
                     await send_detections_to_database(batch)
                     batch.clear()
                     last_batch_time = current_time
@@ -338,14 +250,11 @@ async def detection_processor():
             await asyncio.sleep(1)
 
 
-async def send_detections_to_database(detections: List[DetectionResult]):
-    """Send detection batch to PostgreSQL database"""
+async def send_detections_to_database(detections: list[DetectionResult]):
+    """Send detection batch to PostgreSQL database."""
     try:
-        # Import your database function here
-        # from database_handler import insert_detections
-
+        logger.info(f"received detections {detections}")
         detection_dicts = [asdict(detection) for detection in detections]
-
         # Placeholder for database insertion
         logger.info(f"Sending {len(detections)} detections to database")
 
@@ -356,102 +265,131 @@ async def send_detections_to_database(detections: List[DetectionResult]):
         logger.error(f"Database insertion error: {str(e)}")
 
 
-def generate_rtsp_url(camera: dict) -> List[str]:
-    """Generate possible RTSP URLs for a camera"""
-    base_url = f"rtsp://{USERNAME}:{PASSWORD}@{camera['ip']}:{PORT}"
+def generate_rtsp_url(camera: dict) -> list[str]:
+    base_url = f"rtsp://{USERNAME}:{PASSWORD}@{NVR_IP_ADDRESS}:{PORT}"
     return [
         f"{base_url}/cam/realmonitor?channel={camera['channel']}&subtype=0",  # Dahua format
-        # f"{base_url}/Streaming/Channels/{camera['channel']}01",  # Hikvision format
     ]
 
 
-async def capture_camera_frames(cam_id: int, camera_config: dict):
-    """Optimized background task to capture frames from a specific camera"""
-    global current_frames, stream_active, process_pool
+async def get_detections_from_service(frame: np.ndarray) -> Optional[dict]:
+    """Encodes a frame and sends it to the YOLO service for detection."""
+    try:
+        # Encode the frame to JPEG format in memory
+        is_success, buffer = cv2.imencode(".jpg", frame)
+        if not is_success:
+            logger.warning("Failed to encode frame to JPEG.")
+            return None
 
-    rtsp_urls = generate_rtsp_url(camera_config)
-    cap = None
+        # Prepare the file for multipart/form-data upload
+        files = {
+            "file": (f"{datetime.now()}_frame.jpg", buffer.tobytes(), "image/jpeg")
+        }
+
+        # Make the async HTTP request
+        response = await async_http_client.post(YOLO_SERVICE_URL, files=files)
+        logger.info(response.json())
+        if response:
+            # Check for successful response
+            response.raise_for_status()  # Raises an exception for 4xx/5xx errors
+
+            return response
+        else:
+            pass
+    except ValueError as e:
+        logger.debug(f"HTTP request to YOLO service failed: {e}")
+        return None
+    except Exception as e:
+        logger.debug(f"An unexpected error occurred when calling YOLO service: {e}")
+        return None
+
+
+@logger.catch()
+async def capture_camera_frames(cam_id: int, camera_config: dict):
+    """
+    Background task to capture frames, inspired by the Flask app's resilience logic.
+    """
+    global current_frames
+
+    rtsp_urls_to_try = generate_rtsp_url(camera_config)
+    working_url = None
     last_detection_time = 0
-    frame_count = 0
 
     while stream_active:
-        # Connection logic
-        for url in rtsp_urls:
-            try:
-                cap = cv2.VideoCapture(url)
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer size
-                cap.set(cv2.CAP_PROP_FPS, VIDEO_FPS)
+        # --- Stage 1: Find a working URL (inspired by find_working_rtsp_url) ---
+        if not working_url:
+            for url in rtsp_urls_to_try:
+                try:
+                    cap_test = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+                    if cap_test.isOpened():
+                        success, _ = cap_test.read()
+                        if success:
+                            logger.success(f"Cam {cam_id}: Found working RTSP URL.")
+                            working_url = url
+                            cap_test.release()
+                            break  # Exit the URL testing loop
+                        else:
+                            logger.warning(
+                                f"Cam {cam_id}: URL opens but cannot read frames."
+                            )
+                    cap_test.release()
+                except Exception as e:
+                    logger.error(f"Cam {cam_id}: Exception during URL test: {e}")
 
-                if cap.isOpened():
-                    logger.info(f"Successfully connected to camera {cam_id} at {url}")
-                    break
-            except Exception as e:
-                logger.debug(f"Error connecting to camera {cam_id}: {str(e)}")
+            if not working_url:
+                logger.error(
+                    f"Cam {cam_id}: No working URL found after all attempts. Retrying in 30 seconds."
+                )
+                await asyncio.sleep(30)
                 continue
 
-        if cap is None or not cap.isOpened():
-            logger.debug(f"Could not connect to any RTSP URL for camera {cam_id}")
-            await asyncio.sleep(5)
+        # --- Stage 2: Main Capture Loop (inspired by capture_frames) ---
+        cap = cv2.VideoCapture(working_url)
+        if not cap.isOpened():
+            logger.error(f"Cam {cam_id}: Failed to reopen working URL. Resetting...")
+            working_url = None
+            await asyncio.sleep(10)
             continue
 
-        try:
-            while stream_active:
-                success, frame = cap.read()
-                if not success:
-                    logger.warning(f"Frame read failed for camera {cam_id}")
-                    break
+        logger.info(f"Cam {cam_id}: Successfully connected to stream.")
+        consecutive_failures = 0
+        max_consecutive_failures = 60  # e.g., 2 seconds of dropped frames at 30fps
 
-                frame_count += 1
-                current_time = time.time()
+        while stream_active:
+            success, frame = cap.read()
 
-                # Process detection at intervals (not every frame)
-                if current_time - last_detection_time >= DETECTION_INTERVAL:
-                    try:
-                        # Resize frame for faster processing
-                        detection_frame = cv2.resize(frame, (640, 480))
+            if not success or frame is None:
+                consecutive_failures += 1
+                if consecutive_failures > max_consecutive_failures:
+                    logger.warning(
+                        f"Cam {cam_id}: Stream lost (too many failed reads). Reconnecting."
+                    )
+                    break  # Break inner loop to trigger a reconnect
+                await asyncio.sleep(0.01)  # Short sleep on frame drop
+                continue
 
-                        # Submit to process pool for YOLO inference
-                        loop = asyncio.get_event_loop()
-                        future = loop.run_in_executor(
-                            process_pool,
-                            process_yolo_detection,
-                            (
-                                detection_frame,
-                                cam_id,
-                                camera_config["name"],
-                                camera_config["location"],
-                            ),
-                        )
-                        # Process the results async
-                        asyncio.create_task(handle_detection_result(future))
-                        last_detection_time = current_time
+            consecutive_failures = 0  # Reset on successful read
+            # 1. Encode frame for web streaming
+            display_frame = cv2.resize(frame, (640, 480))
+            _, buffer = cv2.imencode(
+                ".jpg", display_frame, [cv2.IMWRITE_JPEG_QUALITY, 70]
+            )
 
-                    except ValueError as e:
-                        logger.error(
-                            f"Detection submission error for camera {cam_id}: {str(e)}"
-                        )
+            # Use an asyncio.Lock for safe async access to the shared dictionary
+            async with frame_locks[cam_id]:
+                current_frames[cam_id] = buffer.tobytes()
 
-                # Encode frame for streaming (smaller size for web display)
-                display_frame = cv2.resize(frame, (640, 480))
-                success, buffer = cv2.imencode(
-                    ".jpg", display_frame, [cv2.IMWRITE_JPEG_QUALITY, 70]
-                )
+            # 2. Send frame for YOLO detection at intervals
+            current_time = time.time()
+            if current_time - last_detection_time >= DETECTION_INTERVAL:
+                last_detection_time = current_time
+                detection_result = await get_detections_from_service(frame)
+                logger.info(detection_result)
 
-                if success:
-                    with frame_locks[cam_id]:
-                        current_frames[cam_id] = buffer.tobytes()
+            await asyncio.sleep(1.0 / VIDEO_FPS)  # Control the loop speed
 
-                # Control frame rate
-                await asyncio.sleep(1.0 / VIDEO_FPS)
-
-        except ValueError as e:
-            logger.debug(f"Error in frame capture for camera {cam_id}: {str(e)}")
-        finally:
-            if cap:
-                cap.release()
-                logger.info(f"Released capture for camera {cam_id}")
-
-        logger.info(f"Attempting to reconnect to camera {cam_id} in 5 seconds...")
+        cap.release()
+        logger.info(f"Cam {cam_id}: Capture released. Will attempt to reconnect.")
         await asyncio.sleep(5)
 
 
@@ -459,7 +397,7 @@ async def handle_detection_result(future):
     """Handle the result of YOLO detection"""
     try:
         result = await future
-        if result and result.count > 0:  # Only queue if persons detected
+        if result:  # Only queue if persons detected
             await detection_queue.put(result)
     except ValueError as e:
         logger.error(f"Error handling detection result: {str(e)}")
@@ -468,7 +406,7 @@ async def handle_detection_result(future):
 async def generate_frames(cam_id: int):
     """Generator function for streaming frames"""
     while True:
-        with frame_locks[cam_id]:
+        async with frame_locks[cam_id]:
             frame = current_frames[cam_id]
 
         if frame:
@@ -496,13 +434,13 @@ async def generate_frames(cam_id: int):
 
 
 router = APIRouter(
-    prefix="/camera",
+    prefix="/cameras",
     tags=["camera_detections"],
     responses={401: {"description": "Not authorized"}},
 )
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/home", response_class=HTMLResponse)
 async def index():
     """Home page with all camera feeds"""
     camera_html = "".join(
@@ -613,10 +551,10 @@ async def index():
     </head>
     <body>
         <div class="container">
-            <h1>🎥 Advanced Multi-Camera Surveillance System</h1>
+            <h1>🎥 Lantern Seviced Apartments</h1>
             <div class="stats">
                 <h3>System Status</h3>
-                <p><strong>{len(CAMERAS)}</strong> Cameras Active | 
+                <p><strong>{len(CAMERAS)}</strong> Cameras Active |
                    <strong>Real-time</strong> Person Detection | 
                    <strong>AI-Powered</strong> Analytics</p>
             </div>
