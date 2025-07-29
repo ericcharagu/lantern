@@ -19,13 +19,15 @@ from prompts import PROMPT_REPORT_ANALYST
 import os
 pdf_generator = ModernPDFGenerator()
 
-ollama_client=AsyncClient(os.getenv("OLLAMA_HOST"))
+ollama_client=AsyncClient(settings.OLLAMA_HOST)
 async def gen_response(messages: list[dict]):
     return await ollama_client.chat(
-        model=settings.LLM_MODEL_ID, messages=messages, options={"temperature": 0.5,                 "top_p": 0.95,
-                "top_k": 20,
-                "min_p": 0,
-                "repeat_penalty": 1,}
+        model=settings.LLM_MODEL_ID, messages=messages, options={
+            "temperature": 0.5,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0,
+            "repeat_penalty": 1,}
     )
 
 

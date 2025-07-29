@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     container_name: llm_server
     depends_on:
-      yolo_server:
+      yolo_service:
         condition: service_healthy
       ollama:
         condition: service_healthy
@@ -15,7 +15,7 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ./:/app   #removed during prod
+      - ./:/app #removed during prod
       - ./logs:/app/logs
     restart: unless-stopped
     env_file:
@@ -101,7 +101,7 @@ services:
       - llm_network
 
   valkey:
-    image:  valkey/valkey:8.1-alpine
+    image: valkey/valkey:8.1-alpine
     container_name: cache_server
     ports:
       - "6379:6379"

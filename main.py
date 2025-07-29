@@ -26,7 +26,7 @@ from routers.cameras import (
     capture_camera_frames,
     detection_processor,
 )
-
+from services.nightly_services import nightly_report_task
 
 # =============================================================================
 # LIFESPAN MANAGER
@@ -44,7 +44,10 @@ async def lifespan(app: FastAPI):
     # Start background tasks for camera processing
     asyncio.create_task(detection_processor())
     logger.info("Detection processor background task started.")
-
+    
+    # Start the nightly reporting service
+    asyncio.create_task(nightly_report_task())
+    logger.info("Nightly report background task started.")
     for i in range(0, len(CAMERAS), BATCH_SIZE):
         batch_cameras = dict(list(CAMERAS.items())[i : i + BATCH_SIZE])
         for cam_id, config in batch_cameras.items():

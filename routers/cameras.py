@@ -25,7 +25,7 @@ load_dotenv()
 # Constants
 USERNAME = os.getenv("CAMERA_RTSP_USERNAME")
 PASSWORD = camera_rtsp_password
-NVR_IP_ADDRESS=os.getenv("NVR_IP_ADDRESS", "192.168.2.200")
+NVR_IP_ADDRESS=os.getenv("NVR_IP_ADDRESS")
 PORT = 554
 VIDEO_FPS = 30
 DETECTION_INTERVAL = 1.0  # Process detection every 1 second
@@ -229,75 +229,6 @@ detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
 current_frames: dict[int, Optional[bytes]] = {channel: None for channel in CAMERAS}
 frame_locks: dict[int, Any] = {channel: asyncio.Lock() for channel in CAMERAS}
-
-
-async def load_camera_configurations():
-    """
-    Fetches active camera configurations from the database at application startup.
-    It populates the global state dictionaries (CAMERAS, current_frames,
-    and frame_locks) that are essential for the camera processing tasks.
-    """
-    logger.info("Attempting to load camera configurations from database...")
-    db_session: AsyncSession
-    async for db_session in get_db():
-        try:
-            # SQL query to get all cameras marked as active, ordered by their channel number
-            query = text(
-                """
-                SELECT channel, ip, name, location
-                FROM cameras
-                ORDER BY channel
-                """
-            )
-
-            result = await db_session.execute(query)
-            cameras_from_db = result.mappings().all()
-
-            if not cameras_from_db:
-                logger.warning(
-                    "No active cameras found in the database. The camera streaming service will be idle."
-                )
-                # Ensure globals are empty if no cameras are found
-                CAMERAS.clear()
-                current_frames.clear()
-                frame_locks.clear()
-                return  # Exit the function early
-
-            CAMERAS.clear()
-            current_frames.clear()
-            frame_locks.clear()
-            logger.debug("Cleared existing camera configurations for a fresh load.")
-
-            # --- Populate the global state from the database records ---
-            for cam in cameras_from_db:
-                cam_id = cam["channel"]
-
-                # 1. Add the camera's configuration to the main dictionary
-                CAMERAS[cam_id] = {
-                    "channel": cam_id,
-                    "ip": cam["ip_address"],
-                    "name": cam["name"],
-                    "location": cam["location"],
-                }
-
-                # 2. Initialize the placeholder for the latest frame to None
-                current_frames[cam_id] = None
-
-                # 3. Initialize an asyncio.Lock for each camera to prevent race conditions
-                #    when updating the current_frame from multiple async tasks.
-                frame_locks[cam_id] = asyncio.Lock()
-
-            logger.success(
-                f"Successfully loaded and initialized {len(CAMERAS)} active camera configurations."
-            )
-            return CAMERAS
-        except Exception as e:
-            logger.error(
-                f"FATAL: Could not load camera configurations from database. Error: {e}"
-            )
-        finally:
-            await db_session.close()
-
 
 async def detection_processor():
     """Background task to process detection queue and send to database"""
