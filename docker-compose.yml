@@ -104,6 +104,24 @@ services:
     networks:
       - llm_network
 
+  pgadmin:
+    image: elestio/pgadmin
+    container_name: pgadmin_server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5050:5050"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_LISTEN_PORT=5050
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
+    networks:
+      - llm_network
+
   valkey:
     image: valkey/valkey:8.1-alpine
     container_name: cache_server
