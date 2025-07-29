@@ -11,11 +11,11 @@ from fastapi.templating import Jinja2Templates
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field, EmailStr
-
-from utils.db.base import Session, get_db
+from sqlalchemy import select
+from utils.db.base import AsyncSession, get_db, execute_query
 
 # from utils.db.conversation_db import Conversation
-from utils.db.user_db import User, UserManager
+from utils.db.user_db import User, UserManager, UserGroup
 
 
 # Loading env and its variables
@@ -91,14 +91,16 @@ def get_password_hash(password: str) -> str:
 
 
 def get_user(username: str) -> Optional[User]:
-    db = Session()
-    user = db.query(User).filter(User.username == username).first()
+    db = AsyncSession()
+    user = """SELECT * FROM users WHERE username=:username;"""
     db.close()
     return user
 
 
-def authenticate_user(username: str, password: str, db: Session):
-    user = db.query(User).filter(User.username == username).first()
+async def authenticate_user(username: str, password: str, db: AsyncSession):
+    existing_user_query = select(User).where(User.username == username)
+    result = await db.execute(existing_user_query)
+    user = result.scalar_one_or_none()  # Use scalar_one_or_none for async
     if not user:
         return None
     if not verify_password(password, user.password_hash):
@@ -118,7 +120,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+    token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
 ):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -156,9 +158,9 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
     "/token", response_model=Token, summary="Get JWT access token for API access"
 )
 async def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)
 ):
-    user = authenticate_user(form_data.username, form_data.password, db)
+    user = await authenticate_user(form_data.username, form_data.password, db)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -173,7 +175,7 @@ async def login_for_access_token(
 
     # Update last login
     user.last_login = datetime.now(timezone.utc)
-    db.commit()
+    await db.commit()
 
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -184,12 +186,9 @@ async def login_for_access_token(
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user via API",
 )
-async def api_register_user(user_data: UserCreate, db: Session = Depends(get_db)):
-    existing_user = (
-        db.query(User)
-        .filter((User.username == user_data.username) | (User.email == user_data.email))
-        .first()
-    )
+async def api_register_user(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+    existing_user_query = """SELECT * FROM users WHERE email=:user_data.email;"""
+    existing_user = execute_query(existing_user_query)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -204,8 +203,8 @@ async def api_register_user(user_data: UserCreate, db: Session = Depends(get_db)
         is_active=True,  # Or False, if you require email verification
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    await db.commit()
+    await db.refresh(new_user)
     return new_user
 
 
@@ -229,9 +228,9 @@ async def login_form_submit(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    user = authenticate_user(username, password, db)
+    user = await authenticate_user(username, password, db)
     if not user:
         return templates.TemplateResponse(
             "login.html",
@@ -277,7 +276,8 @@ async def register_form_submit(
     email: str = Form(...),
     password: str = Form(...),
     phone_number: str = Form(""),  # Empty string as default
-    db: Session = Depends(get_db),
+    is_managerial: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
 ):
     # Validate input
     if len(username) < 3:
@@ -290,6 +290,8 @@ async def register_form_submit(
             status_code=400, detail="Password must be at least 8 characters"
         )
 
+    # Determine the user group based on the checkbox
+
     # Process registration
     user_data = {
         "username": username,
@@ -298,25 +300,20 @@ async def register_form_submit(
         "phone_number": phone_number if phone_number else None,
     }
     try:
-        existing_user = (
-            db.query(User)
-            .filter(
-                (User.username == user_data["username"])
-                | (User.email == user_data["email"])
-            )
-            .first()
-        )
+        # existing_user_query = """SELECT * FROM users WHERE email = :email;"""
+        # existing_user = execute_query(existing_user_query)
+        # logger.info(existing_user)
 
-        if existing_user:
-            return templates.TemplateResponse(
-                "register.html",
-                {
-                    "request": request,
-                    "error": "Username or email already exists",
-                    "form_data": user_data,  # Return form data to repopulate
-                },
-                status_code=400,
-            )
+        # if existing_user:
+        #     return templates.TemplateResponse(
+        #         "register.html",
+        #         {
+        #             "request": request,
+        #             "error": "Username or email already exists",
+        #             "form_data": user_data,  # Return form data to repopulate
+        #         },
+        #         status_code=400,
+        #     )
 
         new_user = User(
             username=user_data["username"],
@@ -328,7 +325,7 @@ async def register_form_submit(
         )
 
         db.add(new_user)
-        db.commit()
+        await db.commit()
 
         return RedirectResponse(url="/auth/login?registered=true", status_code=303)
 
@@ -344,7 +341,7 @@ async def register_form_submit(
 # Protected endpoint example
 # @router.get("/conversations/")
 # async def read_conversations(current_user: User = Depends(get_current_active_user)):
-#     db                                          = Session()
+#     db                                          = AsyncSession()
 #     try:
 #         conversations                           = (
 #             db.query(Conversation).filter(Conversation.user_id == current_user.id).all()

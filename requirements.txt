@@ -13,15 +13,20 @@ pdfkit
 wkhtmltopdf
 sqlalchemy
 load_dotenv
-psycopg2-binary
+asyncpg
 supervision
 opencv-python
 werkzeug
 python-jose[cryptography]
 passlib
+pydantic-settings
 bcrypt
 pydantic[email]
 valkey[libvalkey]
 pytest
+<<<<<<< HEAD
 pydantic-settings
 ultralytics 
+=======
+pytz
+>>>>>>> main

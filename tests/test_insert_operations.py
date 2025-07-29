@@ -1,7 +1,8 @@
 import pytest
 from faker import Faker
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from db.base import Base, execute_insert_query, CameraTraffic
 import time
@@ -42,7 +43,7 @@ def postgres_container():
 @pytest.fixture(scope="function")
 def test_db(postgres_container):
     """Create fresh tables for each test."""
-    engine = create_engine("postgresql://test:test@localhost:5432/test")
+    engine = create_async_engine("postgresql://test:test@localhost:5432/test")
     Base.metadata.create_all(engine)
     yield engine
     Base.metadata.drop_all(engine)

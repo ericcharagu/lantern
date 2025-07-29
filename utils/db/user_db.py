@@ -1,31 +1,56 @@
 # user_db.py
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Boolean,
+    DateTime,
+    Enum as SQLAlchemyEnum,
+)
+import enum
 from sqlalchemy.orm import relationship
 from werkzeug.security import generate_password_hash, check_password_hash
 from loguru import logger
 from typing import Optional
-from utils.db.base import Base, Session  # Assuming you have a base.py with these defined
-# Import the engine from your conversation file or from a shared base file
+from utils.db.base import (
+    Base,
+    AsyncSession,
+)
 
 # Set up logging
 logger.add("./logs/user_db.log", rotation="1 week")
+
+
+# Define an Enum for the user groups. This enforces data integrity.
+class UserGroup(enum.Enum):
+    STAFF = "staff"
+    MANAGERIAL = "managerial"
+    ADMIN = "admin"  # Good to have an admin role for superusers
+
+
 class User(Base):
     """Database model for user information"""
 
-    __tablename__ = 'users'
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    username = Column(String(50), unique=True, nullable=False)
+    username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(100), unique=True, nullable=False)
     phone_number = Column(String(20), nullable=True)  # Optional phone number
-    password_hash = Column(String(128), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    password_hash = Column(String(255), nullable=False)
+    # username = Column(String(50), unique=True, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
     last_login = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
 
+    def __repr__(self) -> str:
+        return f"<User id={self.id} email={self.email} >"
+
     # Use string reference for the relationship to avoid circular imports
-    conversations = relationship("Conversation", back_populates="user")
+    # conversations = relationship("Conversation", back_populates="user")
 
     def set_password(self, password: str) -> None:
         """Create hashed password"""
@@ -36,32 +61,35 @@ class User(Base):
         return check_password_hash(self.password_hash, password)
 
     def __repr__(self) -> str:
-        return f'<User {self.username}>'
+        return f"<User {self.username}>"
+
 
 class UserManager:
     """Handles user operations including login and registration"""
 
     def __init__(self):
         """Initialize with shared session maker"""
-        self.session = Session()
+        self.session = AsyncSession()
 
-    def create_user(self, username: str, email: str, password: str,
-                   phone_number: Optional[str] = None) -> Optional[User]:
+    def create_user(
+        self,
+        username: str,
+        email: str,
+        password: str,
+        phone_number: Optional[str] = None,
+    ) -> Optional[User]:
         """Create a new user account"""
         try:
             # Check if username or email already exists
-            if self.session.query(User).filter(
-                (User.username == username) |
-                (User.email == email)
-            ).first():
+            if (
+                self.session.query(User)
+                .filter((User.username == username) | (User.email == email))
+                .first()
+            ):
                 logger.warning(f"Username {username} or email {email} already exists")
                 return None
 
-            new_user = User(
-                username=username,
-                email=email,
-                phone_number=phone_number
-            )
+            new_user = User(username=username, email=email, phone_number=phone_number)
             new_user.set_password(password)
 
             self.session.add(new_user)
@@ -73,13 +101,19 @@ class UserManager:
             logger.error(f"Error creating user: {str(e)}")
             return None
 
-    def authenticate_user(self, username_or_email: str, password: str) -> Optional[User]:
+    def authenticate_user(
+        self, username_or_email: str, password: str
+    ) -> Optional[User]:
         """Authenticate a user and update last login"""
         try:
-            user = self.session.query(User).filter(
-                (User.username == username_or_email) |
-                (User.email == username_or_email)
-            ).first()
+            user = (
+                self.session.query(User)
+                .filter(
+                    (User.username == username_or_email)
+                    | (User.email == username_or_email)
+                )
+                .first()
+            )
 
             if user and user.check_password(password):
                 user.last_login = datetime.now(timezone.utc)
@@ -107,7 +141,7 @@ class UserManager:
                 return None
 
             for key, value in kwargs.items():
-                if hasattr(user, key) and key not in ['id', 'password_hash']:
+                if hasattr(user, key) and key not in ["id", "password_hash"]:
                     setattr(user, key, value)
 
             self.session.commit()
@@ -117,7 +151,9 @@ class UserManager:
             logger.error(f"Error updating user: {str(e)}")
             return None
 
-    def change_password(self, user_id: int, old_password: str, new_password: str) -> bool:
+    def change_password(
+        self, user_id: int, old_password: str, new_password: str
+    ) -> bool:
         """Change user password"""
         try:
             user = self.session.query(User).get(user_id)

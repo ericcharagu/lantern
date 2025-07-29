@@ -9,9 +9,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from loguru import logger
+<<<<<<< HEAD
 
 from config import settings
 from routers import auth, cameras, analysis, webhooks  # Import all your routers
+=======
+from middleware.auth_middleware import auth_middleware
+from config import settings
+from routers import (
+    auth,
+    analysis,
+    cameras,
+    webhooks,
+    internal,
+    dashboard,
+)  # Import all your routers
+>>>>>>> main
 from routers.cameras import (
     MAX_WORKERS,
     CAMERAS,
@@ -19,7 +32,7 @@ from routers.cameras import (
     capture_camera_frames,
     detection_processor,
 )
-
+from services.nightly_services import nightly_report_task
 
 # =============================================================================
 # LIFESPAN MANAGER
@@ -30,14 +43,17 @@ async def lifespan(app: FastAPI):
     logger.info("Application starting up...")
 
     # Initialize and assign the process pool for YOLO tasks
-    process_pool = ProcessPoolExecutor(max_workers=MAX_WORKERS)
-    cameras.process_pool = process_pool
-    logger.info(f"Process pool initialized with {MAX_WORKERS} workers.")
+    # process_pool = ProcessPoolExecutor(max_workers=MAX_WORKERS)
+    # cameras.process_pool = process_pool
+    # logger.info(f"Process pool initialized with {MAX_WORKERS} workers.")
 
     # Start background tasks for camera processing
     asyncio.create_task(detection_processor())
     logger.info("Detection processor background task started.")
-
+    
+    # Start the nightly reporting service
+    asyncio.create_task(nightly_report_task())
+    logger.info("Nightly report background task started.")
     for i in range(0, len(CAMERAS), BATCH_SIZE):
         batch_cameras = dict(list(CAMERAS.items())[i : i + BATCH_SIZE])
         for cam_id, config in batch_cameras.items():
@@ -50,9 +66,9 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down...")
     cameras.stream_active = False
     logger.info("Signaled all camera streams to stop.")
-    if cameras.process_pool:
-        cameras.process_pool.shutdown(wait=True)
-        logger.info("Process pool has been shut down.")
+    # Clean up the httpx client
+    await cameras.async_http_client.aclose()
+    logger.info("HTTPX client has been closed.")
     logger.info("Application shutdown complete.")
 
 
@@ -71,7 +87,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# You could add other middleware here, like the auth_middleware
+# Auth Middleware
+app.middleware("http")(auth_middleware)
 
 # 2. Mount Static Files and Templates
 app.mount("/static", StaticFiles(directory="./static"), name="static")
@@ -82,7 +99,9 @@ templates = Jinja2Templates(directory="templates")
 app.include_router(auth.router)
 app.include_router(cameras.router)
 app.include_router(analysis.router)
-# app.include_router(webhooks.router) # Add this once you create the file
+app.include_router(webhooks.router)
+app.include_router(internal.router)
+app.include_router(dashboard.router)
 
 
 # 4. Add a simple root endpoint for a basic health check

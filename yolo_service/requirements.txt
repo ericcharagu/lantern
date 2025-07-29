@@ -1,0 +1,13 @@
+# FILE: yolo_service/requirements.txt
+fastapi
+uvicorn
+python-multipart
+numpy
+opencv-python-headless
+loguru
+supervision
+transformers
+tqdm
+scikit-learn
+umap-learn
+numpy

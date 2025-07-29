@@ -51,6 +51,9 @@ class GenerationRequest(BaseModel):
     sender_profile_id: str
     prompt_id: str
 
+class LlmRequestPayload(BaseModel):
+    user_message:str 
+    user_number:str
 
 class ConversationData(BaseModel):
     user_message: Any
@@ -63,3 +66,6 @@ class ConversationData(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc)
     )
     prompt_id: uuid.UUID
+
+
+# Schemas for the YOLO services

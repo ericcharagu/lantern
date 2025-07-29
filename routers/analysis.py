@@ -7,16 +7,21 @@ from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from schemas import AnalysisRequest, AnalysisJob
+<<<<<<< HEAD
 from dependancies import get_valkey_client, get_ollama_client
+=======
+from dependencies import get_valkey_client, get_ollama_client, require_managerial_user
+>>>>>>> main
 from services.analysis_service import process_analysis_in_background
 
 router = APIRouter(
     prefix="/analyse",
     tags=["Analysis"],
+    dependencies=[Depends(require_managerial_user)],
 )
 
 
-@router.post("", response_model=AnalysisJob, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/", response_model=AnalysisJob, status_code=status.HTTP_202_ACCEPTED)
 async def start_analysis(
     request: AnalysisRequest,
     background_tasks: BackgroundTasks,
