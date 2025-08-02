@@ -1,6 +1,8 @@
 import asyncio
+import json
 import multiprocessing as mp
 import os
+from sqlite3.dbapi2 import Timestamp
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -14,16 +16,13 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from loguru import logger
-from utils.db.base import CameraTraffic, bulk_insert_query
+from utils.db.base import Base, DetectionLog, bulk_insert_query, single_insert_query
 from utils.holidays import holiday_checker
+from utils.timezone import nairobi_tz
 
 # Configure logging
 logger.add("./logs/multi-camera.log", rotation="1 week")
-<<<<<<< HEAD
-with open("./secrets/camera_login_secrets.txt", "r") as f:
-=======
 with open("/app/secrets/camera_login_secrets.txt", "r") as f:
->>>>>>> main
     camera_rtsp_password = f.read().strip()
 load_dotenv()
 # Constants
@@ -58,6 +57,18 @@ YOLO_SERVICE_URL = "http://yolo_service:5000/detect"
 # Create a single, reusable async client for performance
 async_http_client = httpx.AsyncClient(timeout=10.0)
 CAMERAS = {
+    1: {
+        "channel": 1,
+        "name": "Third Floor Left",
+        "location": "Third Floor",
+    },
+    2: {
+        "channel": 2,
+        "name": "Inner Reception",
+        "location": "Ground Floor",
+    },}
+
+""" CAMERAS = {
     1: {
         "channel": 1,
         "name": "Third Floor Left",
@@ -216,7 +227,7 @@ CAMERAS = {
         "name": "First Floor Left",
         "location": "First Floor",
     },
-}
+} """
  
 detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
@@ -239,32 +250,18 @@ async def detection_processor():
                 pass
 
             # Process batch if it's full or enough time has passed
-            current_time = time.time()
+            current_time: float = time.time()
             if (len(batch) >= 10) or (batch and (current_time - last_batch_time) > 30):
                 if batch:
-                    logger.info(batch)
-                    await send_detections_to_database(batch)
+                    flat_batch: list[Any] = [item for sublist in batch for item in sublist]
+                    logger.info(f"Inserting batch of {len(batch)} detections into the database.")
+                    await bulk_insert_query(db_table_name=DetectionLog, query_values=flat_batch)
                     batch.clear()
-                    last_batch_time = current_time
+                    last_batch_time: float = current_time
 
         except ValueError as e:
             logger.error(f"Detection processor error: {str(e)}")
             await asyncio.sleep(1)
-
-
-async def send_detections_to_database(detections: list[DetectionResult]):
-    """Send detection batch to PostgreSQL database."""
-    try:
-        logger.info(f"received detections {detections}")
-        detection_dicts = [asdict(detection) for detection in detections]
-        # Placeholder for database insertion
-        logger.info(f"Sending {len(detections)} detections to database")
-
-        # Example of what the function call would look like:
-        await bulk_insert_query(CameraTraffic, detection_dicts, query_batch_size)
-
-    except ValueError as e:
-        logger.error(f"Database insertion error: {str(e)}")
 
 
 def generate_rtsp_url(camera: dict) -> list[str]:
@@ -290,12 +287,11 @@ async def get_detections_from_service(frame: np.ndarray) -> Optional[dict]:
 
         # Make the async HTTP request
         response = await async_http_client.post(YOLO_SERVICE_URL, files=files)
-        logger.info(response.json())
         if response:
             # Check for successful response
             response.raise_for_status()  # Raises an exception for 4xx/5xx errors
 
-            return response
+            return response.json()
         else:
             pass
     except ValueError as e:
@@ -386,7 +382,29 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
             if current_time - last_detection_time >= DETECTION_INTERVAL:
                 last_detection_time = current_time
                 detection_result = await get_detections_from_service(frame)
-                logger.info(detection_result)
+                if detection_result:
+                    detections_to_log: list[dict[str, Any]] = []
+                    Timestamp = datetime.now(nairobi_tz)
+
+                    for result_str in detection_result.get("detections", []):
+                        detections_list = json.loads(result_str)
+                        for det in detections_list:
+                            box = det.get('box', {})
+                            detections_to_log.append({
+                                "timestamp": Timestamp,
+                                "camera_name": camera_config["name"],
+                                "location": camera_config["location"],
+                                "object_name": det.get("name"),
+                                "confidence": det.get("confidence"),
+                                "box_x1": box.get("x1"),
+                                "box_y1": box.get("y1"),
+                                "box_x2": box.get("x2"),
+                                "box_y2": box.get("y2"),
+                            })
+                    if detections_to_log:
+                        for detection in detections_to_log:
+                            await detection_queue.put(detections_to_log)
+                           
 
             await asyncio.sleep(1.0 / VIDEO_FPS)  # Control the loop speed
 
@@ -451,7 +469,6 @@ async def index():
             <h3>Camera {cam_id} - {config["name"]}</h3>
             <div class="camera-info">
                 <span class="location">Location: {config["location"]}</span>
-                <span class="ip">IP: {config["ip"]}</span>
             </div>
             <img src="/video/{cam_id}" alt="Camera {cam_id} Stream" loading="lazy">
         </div>
@@ -602,7 +619,7 @@ async def get_status():
         "total_cameras": len(CAMERAS),
         "active_cameras": active_cameras,
         "detection_queue_size": detection_queue.qsize(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now().isoformat(),
     }
 
 

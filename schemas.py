@@ -54,6 +54,7 @@ class GenerationRequest(BaseModel):
 class LlmRequestPayload(BaseModel):
     user_message:str 
     user_number:str
+    messages:list[Any]
 
 class ConversationData(BaseModel):
     user_message: Any

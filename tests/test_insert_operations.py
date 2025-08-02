@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
-from db.base import Base, execute_insert_query, CameraTraffic
+from db.base import Base, execute_insert_query, DetectionLog
 import time
 import docker
 import os
@@ -82,7 +82,7 @@ def generate_camera_data(num_rows=1):
 # --- Tests ---
 def test_single_insert(test_db, db_session):
     data = generate_camera_data(1)[0]
-    execute_insert_query(CameraTraffic, data)
+    execute_insert_query(DetectionLog, data)
 
     result = db_session.execute(
         text(f"SELECT * FROM camera_traffic WHERE camera_name = :name"),

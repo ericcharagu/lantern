@@ -13,13 +13,7 @@ API_VERSION = "v22.0"
 PHONE_NUMBER_ID: int = int(os.getenv("PHONE_NUMBER_ID", 0))
 
 # TODO:To be moved to secrets duting prod and when permanent Token acquired
-ACCESS_TOKEN = "EAARQrAKzcHUBPHeMdVZCZBX4yxr2bnZCdb8eY0oEbch0JsjNeSvz7qY1UWrb85ZC5B7x9sh3McJwI1gZC4BGKFpZBRMZBHHr0XoAFnI0vevJBSRuFpnPmEZAtEjvH91xXNWM8HZBuyhMZBoUOgJ8T5ZAgAMq4VCo1yKjo3nYzZCEg3ftyObzQrMjSs9LYfIRZCC2iKbZCdjyFJ2cplKzh2OnDDksKKlJZBEVgIxWtoJ0IWX8b0ZD"
-# RECIPIENT_NUMBER = "447709769066"
-
-# TODO:Add recepient number from the message sender
-RECIPIENT_NUMBER = "+254736391323"
-
-
+ACCESS_TOKEN = "EAARQrAKzcHUBPKmq2aZCdE7PKgkZCQ7pAqK52fGY37G7fSlr6q1aoCgHqgsNNjpjwhMJ0do3im8eT4Uw9ZAgjB35epJuxh5OPOo0jzCoXUZAZAZCUOYIiwmn5Rc0Fqg5OqDZCKFik49Mgsn60wRAapNtqV1Bsis5ZAiEHXidaR3ZB1IXbaZC38Sjml6Av5Ph9ZBDPEwss18cjjbSKDlWXsnHohSZAEokEYNicYXe31WE4OgZD"
 @logger.catch
 def whatsapp_messenger(llm_text_output: Any, recipient_number:str):
     if not ACCESS_TOKEN:

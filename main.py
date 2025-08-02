@@ -9,11 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from loguru import logger
-<<<<<<< HEAD
-
+import redis.asyncio as redis
 from config import settings
 from routers import auth, cameras, analysis, webhooks  # Import all your routers
-=======
 from middleware.auth_middleware import auth_middleware
 from config import settings
 from routers import (
@@ -21,10 +19,8 @@ from routers import (
     analysis,
     cameras,
     webhooks,
-    internal,
     dashboard,
 )  # Import all your routers
->>>>>>> main
 from routers.cameras import (
     MAX_WORKERS,
     CAMERAS,
@@ -33,6 +29,9 @@ from routers.cameras import (
     detection_processor,
 )
 from services.nightly_services import nightly_report_task
+import os 
+VALKEY_HOST: str = os.getenv("VALKEY_HOST", "cache_server")
+VALKEY_PORT: int = int(os.getenv("VALKEY_PORT", 6379))
 
 # =============================================================================
 # LIFESPAN MANAGER
@@ -50,7 +49,13 @@ async def lifespan(app: FastAPI):
     # Start background tasks for camera processing
     asyncio.create_task(detection_processor())
     logger.info("Detection processor background task started.")
-    
+
+    redis_pool = redis.ConnectionPool(
+        host=VALKEY_HOST, port=VALKEY_PORT, db=0, decode_responses=True
+    )
+    app.state.redis = redis.Redis(connection_pool=redis_pool)
+
+   
     # Start the nightly reporting service
     asyncio.create_task(nightly_report_task())
     logger.info("Nightly report background task started.")
@@ -68,9 +73,12 @@ async def lifespan(app: FastAPI):
     logger.info("Signaled all camera streams to stop.")
     # Clean up the httpx client
     await cameras.async_http_client.aclose()
+    
     logger.info("HTTPX client has been closed.")
     logger.info("Application shutdown complete.")
 
+    #Clean the redis pool
+    await app.state.redis.close()
 
 # =============================================================================
 # FASTAPI APP INITIALIZATION AND ASSEMBLY
@@ -100,7 +108,6 @@ app.include_router(auth.router)
 app.include_router(cameras.router)
 app.include_router(analysis.router)
 app.include_router(webhooks.router)
-app.include_router(internal.router)
 app.include_router(dashboard.router)
 
 

@@ -24,6 +24,5 @@ class Settings(BaseSettings):
     NIGHTLY_REPORT_RECIPIENT_NUMBER:str = os.getenv("254736391323", "")
 
 
-
 # Create a single settings instance to be used across the application
 settings = Settings()

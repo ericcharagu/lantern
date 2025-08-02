@@ -1,84 +1,67 @@
 # services/nightly_report_service.py
-from pytz import _UTCclass
-
-
-from pytz.tzinfo import DstTzInfo, StaticTzInfo
-
-
 import asyncio
-import os
-import json
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta
+from sqlalchemy import select, func, and_
 from loguru import logger
 
 from config import settings
 from utils.whatsapp.whatsapp import whatsapp_messenger
-import pytz
+from utils.db.base import AsyncSessionLocal, DetectionLog
+from utils.timezone import nairobi_tz
 
 # Add a logger for this service
 logger.add("logs/nightly_reporter.log", rotation="1 week", level="INFO")
-nbo_time: _UTCclass | StaticTzInfo | DstTzInfo=pytz.timezone("Africa/Nairobi") 
-def count_nightly_detections() -> int:
+
+async def count_nightly_detections() -> int:
     """
-    Reads detection logs and counts human detections between 10 PM of the previous day
-    and 4:50 AM of the current day.
+    Queries the database to count human detections between 10 PM of the previous day
+    and 4:50 AM of the current day in Nairobi time.
     """
-    today = datetime.now(nbo_time)
-    yesterday = today - timedelta(days=1)
-    
-    # Define the time window for the report
-    # Start: Yesterday at 22:00:00 UTC
-    # End: Today at 04:50:00 UTC
-    start_time = datetime.combine(yesterday.date(), time(22, 0), tzinfo=timezone.utc)
-    end_time = datetime.combine(today.date(), time(4, 50), tzinfo=timezone.utc)
-    
-    # Log files to check: yesterday's and today's
-    log_files_to_check = [
-        f"logs/detections/{yesterday.strftime('%Y-%m-%d')}.log",
-        f"logs/detections/{today.strftime('%Y-%m-%d')}.log"
-    ]
-    
-    total_nightly_detections = 0
-    
-    for log_file_path in log_files_to_check:
-        if not os.path.exists(log_file_path):
-            logger.info(f"Detection log file not found, skipping: {log_file_path}")
-            continue
+    async with AsyncSessionLocal() as session:
+        now_nairobi = datetime.now(nairobi_tz)
+        today_date = now_nairobi.date()
+        yesterday_date = today_date - timedelta(days=1)
 
-        with open(log_file_path, 'r') as f:
-            for line in f:
-                try:
-                    log_entry = json.loads(line)
-                    timestamp_str = log_entry.get("timestamp")
-                    human_count = log_entry.get("human_count", 0)
+        # Define the time window in Nairobi time
+        start_time_nairobi = nairobi_tz.localize(datetime.combine(yesterday_date, time(22, 0)))
+        end_time_nairobi = nairobi_tz.localize(datetime.combine(today_date, time(4, 50)))
 
-                    if not timestamp_str or human_count == 0:
-                        continue
+        # Convert to UTC for database query, as timestamps are stored in UTC
+        start_time_utc = start_time_nairobi.astimezone(pytz.utc)
+        end_time_utc = end_time_nairobi.astimezone(pytz.utc)
 
-                    log_time_utc = datetime.fromisoformat(timestamp_str)
+        logger.info(f"Querying for detections between {start_time_utc} (UTC) and {end_time_utc} (UTC).")
 
-                    # Check if the log entry is within our night window
-                    if start_time<= log_time_utc < end_time:
-                        total_nightly_detections += human_count
-                except (json.JSONDecodeError, KeyError, TypeError) as e:
-                    logger.error(f"Skipping malformed log line in {log_file_path}: {line.strip()}. Error: {e}")
-    
-    report_date_str = yesterday.strftime("%d %b %Y")
-    logger.info(f"Counted {total_nightly_detections} human detections for the night of {report_date_str}.")
-    return total_nightly_detections
+        stmt = (
+            select(func.count(DetectionLog.id))
+            .where(
+                and_(
+                    DetectionLog.object_name == 'person',
+                    DetectionLog.timestamp >= start_time_utc,
+                    DetectionLog.timestamp < end_time_utc
+                )
+            )
+        )
+
+        result = await session.execute(stmt)
+        count = result.scalar_one_or_none() or 0
+        
+        report_date_str = yesterday_date.strftime("%d %b %Y")
+        logger.info(f"Counted {count} human detections for the night of {report_date_str}.")
+        return count
 
 async def nightly_report_task():
     """
-    A long-running task that wakes up at 5 AM UTC every day to send the report.
+    A long-running task that wakes up at 5 AM Nairobi time every day to send the report.
     """
     while True:
-        now: datetime = datetime.now(nbo_time)
-
-        target_time: datetime = now.replace(hour=5, minute=0, second=0, microsecond=0)
-        if now > target_time:
+        now_nairobi = datetime.now(nairobi_tz)
+        # Target 5:00 AM Nairobi time
+        target_time = now_nairobi.replace(hour=5, minute=0, second=0, microsecond=0)
+        if now_nairobi > target_time:
             target_time += timedelta(days=1)
         
-        sleep_duration = (target_time - now).total_seconds()
+        sleep_duration = (target_time - now_nairobi).total_seconds()
         logger.info(f"Nightly reporter sleeping for {sleep_duration / 3600:.2f} hours. Will run at {target_time}.")
         await asyncio.sleep(sleep_duration)
 
@@ -91,9 +74,9 @@ async def nightly_report_task():
                 await asyncio.sleep(60)
                 continue
 
-            count = count_nightly_detections()
+            count = await count_nightly_detections()
             
-            report_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%A, %d %B %Y")
+            report_date = (datetime.now(nairobi_tz) - timedelta(days=1)).strftime("%A, %d %B %Y")
             
             report_message = (
                 f"--- Nightly Security Report ---\n"

@@ -12,15 +12,11 @@ from loguru import logger
 # Model definition can stay as it is for type hinting, but it's better
 # if it's imported from a central models file to avoid re-definition.
 # Assuming it's defined in base.py, we could import it.
-from .db.base import CameraTraffic  # Assuming CameraTraffic is the correct model name
+from .db.base import DetectionLog  
 
 # Logging
 logger.add("./logs/camera_stats.log", rotation="1 week")
 
-# The CameraTrackingData model was defined in the original file. If this is a separate model,
-# ensure it's defined correctly in a shared models file (like base.py) and imported here.
-# For now, I will use the 'CameraTraffic' model from your base.py as it seems more likely to be correct.
-# If CameraTrackingData is a different table, please adjust.
 Base = declarative_base()
 
 
@@ -37,36 +33,6 @@ class CameraTrackingData(Base):
     camera_id = Column(Integer, nullable=False)
 
 
-<<<<<<< HEAD
-# Connection setup
-def get_connection_string():
-    with open("./secrets/postgres_secrets.txt", "r") as f:
-        password = f.read().strip()
-
-    return f"postgresql://{os.getenv('DB_USER', 'postgres')}:{password}@{os.getenv('DB_HOST', 'postgres')}:{os.getenv('DB_PORT', 5432)}/{os.getenv('DB_NAME', 'postgres')}"
-
-
-engine = create_engine(get_connection_string(), pool_pre_ping=True, pool_recycle=300)
-Session = sessionmaker(bind=engine)
-
-
-# Statistics functions
-class CameraStats:
-    def __init__(self):
-        self.session = Session()
-
-    def get_detection_counts(self, hours=24):
-        """Get detection counts per camera for last N hours"""
-        time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
-        return (
-            self.session.query(
-                CameraTrackingData.camera_id,
-                func.count(CameraTrackingData.id).label("detection_count"),
-            )
-            .filter(CameraTrackingData.timestamp >= time_threshold)
-            .group_by(CameraTrackingData.camera_id)
-            .all()
-=======
 async def get_detection_counts(session: AsyncSession, hours: int = 24) -> list:
     """Get detection counts per camera for the last N hours."""
     time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -74,7 +40,6 @@ async def get_detection_counts(session: AsyncSession, hours: int = 24) -> list:
         select(
             CameraTrackingData.camera_id,
             func.count(CameraTrackingData.id).label("detection_count"),
->>>>>>> main
         )
         .where(CameraTrackingData.timestamp >= time_threshold)
         .group_by(CameraTrackingData.camera_id)

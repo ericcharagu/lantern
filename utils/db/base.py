@@ -43,6 +43,23 @@ class Camera(Base):
     is_active = Column(Boolean)
 
 
+class DetectionLog(Base):
+
+    __tablename__ = "detection_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+    camera_name = Column(String(100), nullable=False)
+    location = Column(String(100))
+    object_name = Column(String(50), nullable=False, index=True)
+    confidence = Column(Float, nullable=False)
+    box_x1 = Column(Float, nullable=False)
+    box_y1 = Column(Float, nullable=False)
+    box_x2 = Column(Float, nullable=False)
+    box_y2 = Column(Float, nullable=False)
+
+    def __repr__(self):
+        return f"<DetectionLog(id={self.id}, object='{self.object_name}', camera='{self.camera_name}')>"
+
 class CameraTraffic(Base):
     __tablename__ = "camera_traffic"
     id = Column(Integer, primary_key=True)
@@ -76,9 +93,6 @@ class MobileRequestLog(Base):
 def get_async_connection_string() -> str:
     """Construct the ASYNCHRONOUS database connection string."""
     try:
-<<<<<<< HEAD
-        with open("./secrets/postgres_secrets.txt", "r") as f:
-=======
         # Assumes the secret is at /run/secrets/postgres_secrets in Docker
         # For local dev, you might need a different path or load from .env
         secret_path = "/run/secrets/postgres_secrets"
@@ -86,7 +100,6 @@ def get_async_connection_string() -> str:
             secret_path = "./secrets/postgres_secrets.txt"  # Fallback for local dev
 
         with open(secret_path, "r") as f:
->>>>>>> main
             password = f.read().strip()
 
         # The key change: postgresql+asyncpg
@@ -132,11 +145,11 @@ async def execute_query(query: str, params: dict = None) -> list:
         return []
 
 
-async def single_insert_query(db_table: Base, query_values: dict):
+async def single_insert_query(db_table: Base, query_values: list[dict[str, Any]]):
     """Execute an async insert query for a single row."""
     async with AsyncSessionLocal() as session:
         try:
-            session.add(db_table(**query_values))
+            session.add(db_table(query_values))
             await session.commit()
         except Exception as e:
             await session.rollback()
@@ -146,7 +159,7 @@ async def single_insert_query(db_table: Base, query_values: dict):
 
 async def bulk_insert_query(
     db_table_name: type[Base],
-    query_values: Union[Dict[str, Any], List[Dict[str, Any]]],
+    query_values:list[dict[Any, Any]],
     batch_size: int = 500,  # Added default batch_size
 ):
     """Execute an async bulk insert query."""
@@ -159,10 +172,9 @@ async def bulk_insert_query(
     async with AsyncSessionLocal() as session:
         try:
             for i in range(0, len(query_values), batch_size):
-                batch = [
-                    db_table_name(**row) for row in query_values[i : i + batch_size]
-                ]
-                session.add_all(batch)
+                batch_data = query_values[i:i + batch_size]
+                # Use dictionary unpacking to correctly initialize the model
+                session.add_all([db_table_name(**row) for row in batch_data])
                 await session.commit()  
             logger.info(
                 f"Successfully inserted {len(query_values)} rows into {db_table_name.__tablename__}."

@@ -6,7 +6,7 @@ python-multipart
 ollama
 loguru
 transformers
-duckduckgo_search
+ddgs
 watchfiles
 reportlab
 pdfkit
@@ -24,9 +24,5 @@ bcrypt
 pydantic[email]
 valkey[libvalkey]
 pytest
-<<<<<<< HEAD
-pydantic-settings
-ultralytics 
-=======
 pytz
->>>>>>> main
+redis

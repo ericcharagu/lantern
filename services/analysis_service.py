@@ -106,7 +106,6 @@ async def process_analysis_in_background(
             "detailed_report": clean_text_remove_think_tags(llm_report),
             "analysis_metadata": {
                 "generated_at": datetime.now(timezone.utc),
-                "model_used": llm_model_id,
                 "include_predictions": request.include_predictions,
             },
         }

@@ -5,28 +5,20 @@ import hmac
 import os
 from typing import Any, Optional
 import uuid
-<<<<<<< HEAD
-import valkey
-from ollama import AsyncClient
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status, Request
-from fastapi.responses import JSONResponse
-from fastapi import Query
-from typing import Optional
-
-from schemas import AnalysisRequest, AnalysisJob
-from dependancies import get_valkey_client, get_ollama_client
-from services.analysis_service import process_analysis_in_background
-=======
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 import httpx
 from loguru import logger
+from prompts import PROMPT_WHATSAPP_ASSISTANT
 from schemas import GenerationRequest, LlmRequestPayload
 from services.analysis_service import gen_response
-from utils.text_processing import convert_llm_output_to_readable
+from utils.cache import add_to_chat_history
+from utils.llm.llm_base import available_functions, llm_model, llm_pipeline, tools
+from utils.llm.text_processing import convert_llm_output_to_readable
 from utils.whatsapp.whatsapp import whatsapp_messenger
->>>>>>> main
+from ollama import chat
+
 
 # Add logging path
 logger.add("./logs/webhooks.log", rotation="1 week")
@@ -38,10 +30,6 @@ router = APIRouter(
 # Ensure media directory exists
 os.makedirs("media_files", exist_ok=True)
 
-<<<<<<< HEAD
-@router.post("/webhooks", name = "recieve_whatsapp_request")
-async def process_whatsapp_request(request: Request):
-=======
 # Load secrets securely from environment variables
 VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN")
 with open(file="/app/secrets/whatsapp_secrets.txt", mode="r") as f:
@@ -67,13 +55,18 @@ async def process_message_in_background(
     user_number: str,
  
 ):
+
     """This function runs in the background to process and respond to messages."""
     logger.info(f"Background task started for user {user_number}.")
+         # Redis client
+    redis_client = request.app.state.redis
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": PROMPT_WHATSAPP_ASSISTANT},     
+    ]
+    content:str=""
     try:
 
-        llm_messages=[{"role": "user","content":user_message }]
-        llm_response = await gen_response(messages=llm_messages)
-        logger.info(llm_response)
+        llm_response=chat(llm_model,messages=[{"role":"user", "content":user_message}], tools=tools )
         if not llm_response or "message" not in llm_response:
             logger.error(f"Received invalid or None response from LLM pipeline for user {user_number}.")
             # Send a generic error message
@@ -82,13 +75,42 @@ async def process_message_in_background(
                 recipient_number=user_number
             )
             return
-        content: str = llm_response.get("message", {}).get("content", "")
-        if not content:
-             logger.warning(f"LLM returned empty content for user {user_number}. Sending fallback.")
-             content = "I'm not sure how to respond to that. Could you please rephrase your request?"
+                
+        if llm_response.message.tool_calls:
+            for tool in llm_response.message.tool_calls:
+                # Ensure the function is available, and then call it
+                if function_to_call := available_functions.get(tool.function.name):
+                    logger.info(f"Calling function: {tool.function.name}")
+                    logger.info(f"Arguments:'{tool.function.arguments}")        
+                    # Get the actual function object
+                    output = function_to_call(**tool.function.arguments)
+                else:
+                    logger.info(f"Function {tool.function.name}not found")
+
+            if llm_response.message.tool_calls:
+                messages.append(llm_response.message)
+                messages.append({'role': 'tool', 'content': str(output), 'tool_name': tool.function.name})
+            llm_pipeline_payload = LlmRequestPayload(
+                user_message=user_message,
+                user_number=user_number,
+                messages=messages,
+            )
+            final_response =await llm_pipeline(request=request, llm_request_payload=llm_pipeline_payload)
+            if not final_response.message.content:
+                logger.warning(f"LLM returned empty content for user {user_number}. Sending fallback.")
+                final_response.message.content = "I'm not sure how to respond to that. Could you please rephrase your request?"
+            else:
+                content=final_response.message.content
         cleaned_response = convert_llm_output_to_readable(content)
+        logger.info(cleaned_response)
         whatsapp_messenger(
             llm_text_output=cleaned_response, recipient_number=user_number
+        )
+        await add_to_chat_history(
+            client=redis_client,
+            user_number=user_number,
+            user_message=user_message,
+            llm_response=cleaned_response,
         )
         logger.success(f"Response {cleaned_response} sent to {user_number}.")
     except ValueError as e:
@@ -115,7 +137,6 @@ async def handle_whatsapp_message(request: Request, background_tasks: Background
     # )
     # if not verify_signature(await request.body(), signature):
     #     raise HTTPException(status_code=403, detail="Invalid signature")
->>>>>>> main
 
     try:
         data = await request.json()

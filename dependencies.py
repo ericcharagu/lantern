@@ -20,8 +20,9 @@ def get_valkey_client():
 
 
 def get_ollama_client():
-    return ollama_client
+    return AsyncClient(host=settings.OLLAMA_HOST)    
 
+llm_client=get_ollama_client()
 
 def require_user_group(required_groups: list[UserGroup]):
     """
