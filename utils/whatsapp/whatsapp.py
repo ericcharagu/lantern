@@ -7,13 +7,12 @@ import os
 # Load the env
 load_dotenv()
 # Logger file path
-logger.add("./logs/whatsapp.log", rotation="700 MB")
+logger.add("./logs/whatsapp.log", rotation="1 week")
 # Configuration
 API_VERSION = "v22.0"
 PHONE_NUMBER_ID: int = int(os.getenv("PHONE_NUMBER_ID", 0))
 
-# TODO:To be moved to secrets duting prod and when permanent Token acquired
-ACCESS_TOKEN = "EAARQrAKzcHUBPKmq2aZCdE7PKgkZCQ7pAqK52fGY37G7fSlr6q1aoCgHqgsNNjpjwhMJ0do3im8eT4Uw9ZAgjB35epJuxh5OPOo0jzCoXUZAZAZCUOYIiwmn5Rc0Fqg5OqDZCKFik49Mgsn60wRAapNtqV1Bsis5ZAiEHXidaR3ZB1IXbaZC38Sjml6Av5Ph9ZBDPEwss18cjjbSKDlWXsnHohSZAEokEYNicYXe31WE4OgZD"
+ACCESS_TOKEN = "EAARQrAKzcHUBPPel9M8KaUkx8n9sDhsh5gD9MV64GNWHs58zDGaxshDMSKrGMuTmZC8cnOlHW8I2tPjZAJIlFQMOIflhQx8AJNXm0gnsx2ot5Yph7C10tFAXhkJHzZAnafbqZC4ZChvOduYBE7FfElw6ojHahUcpkGGTZCTVfAlaLchdYstRNLR6tM6631b5qMwBZChKLvbUd8fZCNJo5fXzAZCxT6HWCEKDNdL924R4OZBHgZD"
 @logger.catch
 def whatsapp_messenger(llm_text_output: Any, recipient_number:str):
     if not ACCESS_TOKEN:
@@ -38,13 +37,6 @@ def whatsapp_messenger(llm_text_output: Any, recipient_number:str):
     try:
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()  # Raises exception for HTTP errors
-
-        print(f"Status Code: {response.status_code}")
-        print("Response Headers:")
-        for header, value in response.headers.items():
-            print(f"{header}: {value}")
-        print("\nResponse Body:")
-        print(response.json())
     except requests.exceptions.RequestException as e:
         logger.debug(f"Error making request: {e}")
         if hasattr(e, "response") and e.response:

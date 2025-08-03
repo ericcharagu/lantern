@@ -36,27 +36,12 @@ BATCH_SIZE = 4  # Process cameras in batches
 MAX_WORKERS = min(8, mp.cpu_count())  # Limit workers based on CPU cores
 query_batch_size = 30
 
-
-@dataclass
-class DetectionResult:
-    timestamp: str
-    camera_name: str
-    count: int
-    location: str
-    day_of_week: str
-    is_holiday: bool
-    direction: str
-    # confidence_scores: int
-    # bounding_boxes: list[list[float]]
-
-
-TEST_DIRECTION = "Entry"
 # Process pool for YOLO inference
 YOLO_SERVICE_URL = "http://yolo_service:5000/detect"
 
 # Create a single, reusable async client for performance
 async_http_client = httpx.AsyncClient(timeout=10.0)
-CAMERAS = {
+CAMERAS: dict[int, dict[str, int | str]] = {
     1: {
         "channel": 1,
         "name": "Third Floor Left",
@@ -68,7 +53,7 @@ CAMERAS = {
         "location": "Ground Floor",
     },}
 
-""" CAMERAS = {
+""" CAMERAS:dict[int, dict[str, int | str]]  = {
     1: {
         "channel": 1,
         "name": "Third Floor Left",
@@ -341,7 +326,6 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
                 await asyncio.sleep(30)
                 continue
 
-        # --- Stage 2: Main Capture Loop (inspired by capture_frames) ---
         cap = cv2.VideoCapture(working_url)
         if not cap.isOpened():
             logger.error(f"Cam {cam_id}: Failed to reopen working URL. Resetting...")
@@ -351,8 +335,7 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
 
         logger.info(f"Cam {cam_id}: Successfully connected to stream.")
         consecutive_failures = 0
-        max_consecutive_failures = 60  # e.g., 2 seconds of dropped frames at 30fps
-
+        max_consecutive_failures = 60  
         while stream_active:
             success, frame = cap.read()
 
@@ -362,22 +345,19 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
                     logger.warning(
                         f"Cam {cam_id}: Stream lost (too many failed reads). Reconnecting."
                     )
-                    break  # Break inner loop to trigger a reconnect
-                await asyncio.sleep(0.01)  # Short sleep on frame drop
+                    break  
+                await asyncio.sleep(0.01)  
                 continue
 
             consecutive_failures = 0  # Reset on successful read
-            # 1. Encode frame for web streaming
             display_frame = cv2.resize(frame, (640, 480))
             _, buffer = cv2.imencode(
                 ".jpg", display_frame, [cv2.IMWRITE_JPEG_QUALITY, 70]
             )
 
-            # Use an asyncio.Lock for safe async access to the shared dictionary
             async with frame_locks[cam_id]:
                 current_frames[cam_id] = buffer.tobytes()
 
-            # 2. Send frame for YOLO detection at intervals
             current_time = time.time()
             if current_time - last_detection_time >= DETECTION_INTERVAL:
                 last_detection_time = current_time
@@ -411,17 +391,6 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
         cap.release()
         logger.info(f"Cam {cam_id}: Capture released. Will attempt to reconnect.")
         await asyncio.sleep(5)
-
-
-async def handle_detection_result(future):
-    """Handle the result of YOLO detection"""
-    try:
-        result = await future
-        if result:  # Only queue if persons detected
-            await detection_queue.put(result)
-    except ValueError as e:
-        logger.error(f"Error handling detection result: {str(e)}")
-
 
 async def generate_frames(cam_id: int):
     """Generator function for streaming frames"""
@@ -619,7 +588,7 @@ async def get_status():
         "total_cameras": len(CAMERAS),
         "active_cameras": active_cameras,
         "detection_queue_size": detection_queue.qsize(),
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(nairobi_tz).isoformat(),
     }
 
 

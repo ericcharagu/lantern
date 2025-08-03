@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from collections import defaultdict, deque
 
+from datetime import datetime
 import os
 from typing import Any
 import uuid
@@ -16,12 +17,13 @@ from transformers.utils import get_json_schema
 from utils.cache import add_to_chat_history, get_chat_history
 from utils.llm.llm_tools import internet_search_tool, user_query_to_sql
 from utils.llm.text_processing import convert_llm_output_to_readable
+from utils.timezone import nairobi_tz
 
 # Load environment variables
 load_dotenv()
 
 # Adding logging information
-logger.add("./logs/llm_app", rotation="10 MB")
+logger.add("./logs/llm_app", rotation="1 week")
 llm_model = settings.LLM_MODEL_ID
 
 
@@ -108,8 +110,9 @@ async def llm_pipeline(request: Request, llm_request_payload: LlmRequestPayload)
         chat_history: list[Any] = await get_chat_history(
             client=redis_client, user_number=llm_request_payload.user_number
         )
-
+        current_time:datetime=datetime.now(nairobi_tz)
         final_user_content: str = (
+            f"The current time is {current_time}.\n"
             f"And this chat history: {chat_history}.\n"
             f"Answer the user's query: {llm_request_payload.user_message}\n"
             #f"{SECURITY_POST_PROMPT}" # Append security rules to every prompt

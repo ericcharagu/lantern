@@ -1,7 +1,8 @@
 from datetime import date, datetime, timezone
 from loguru import logger
+from utils.timezone import nairobi_tz
 
-logger.add("./logs/holiday_checker.log", rotation="700 MB")
+logger.add("./logs/holiday_checker.log", rotation="1 week")
 
 
 def calculate_easter(year):
@@ -74,7 +75,7 @@ def get_kenyan_holidays(year=None):
 current_year = date.today().year
 holidays = get_kenyan_holidays(current_year)
 
-current_time_utc = datetime.now(timezone.utc)
+current_time_utc = datetime.now(nairobi_tz)
 formatted_time = current_time_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

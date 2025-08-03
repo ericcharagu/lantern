@@ -13,4 +13,4 @@ def get_nairobi_timezone():
         return pytz.utc
 
 # Global instance for use across the application
-nairobi_tz = get_nairobi_timezone()
+nairobi_tz = get_nairobi_timezone()#

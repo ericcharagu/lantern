@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
+from utils.timezone import nairobi_tz
 
 
 # ---- Request/Response Schemas for /analyse ----
@@ -46,7 +47,7 @@ class AnalysisJob(BaseModel):
 class GenerationRequest(BaseModel):
     prompt: str
     prompt_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(nairobi_tz)
     )
     sender_profile_id: str
     prompt_id: str
@@ -64,7 +65,7 @@ class ConversationData(BaseModel):
     category: str
     source: str
     interaction_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(nairobi_tz)
     )
     prompt_id: uuid.UUID
 

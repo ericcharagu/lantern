@@ -5,8 +5,11 @@ from datetime import date, datetime, timezone
 from dependencies import ollama_client
 from loguru import logger
 from ollama import AsyncClient
+from utils.llm.llm_base import llm_model, llm_pipeline
+from utils.llm.text_processing import convert_llm_output_to_readable
+from utils.timezone import nairobi_tz
 import valkey
-
+import utils.camera_stats
 from schemas import AnalysisRequest
 from config import settings
 from utils.app_tools import (
@@ -44,7 +47,7 @@ async def process_analysis_in_background(
             json.dumps(
                 {
                     "status": "processing",
-                    "submitted_at": datetime.now(timezone.utc).isoformat(),
+                    "submitted_at": datetime.now(nairobi_tz).isoformat(),
                 }
             ),
             ex=3600,
@@ -57,7 +60,7 @@ async def process_analysis_in_background(
         recommendations = create_recommendations(stats, request.building_stats)
         # Prepare data for LLM analysis
         analysis_context = {
-            "camera_detection_stats": await camera_stats.get_detection_counts(),
+            "camera_detection_stats": await utils.camera_stats.get_detection_counts(),
             "camera_confidence_stats": await camera_stats.get_confidence_stats(),
             "camera_movement_stats": [
                 await camera_stats.get_movement_stats(camera_id=i) for i in range(32)
@@ -83,7 +86,7 @@ async def process_analysis_in_background(
             },
         ]
 
-        response = await gen_response(messages)
+        response = chat(llm_model,messages=messages, tools=tools )
         # Extract response content
         if "message" in response and "content" in response["message"]:
             llm_report = response["message"]["content"]
@@ -103,9 +106,9 @@ async def process_analysis_in_background(
             "raw_statistics": stats,
             "key_insights": insights,
             "recommendations": recommendations,
-            "detailed_report": clean_text_remove_think_tags(llm_report),
+            "detailed_report": convert_llm_output_to_readable(llm_output=llm_report),
             "analysis_metadata": {
-                "generated_at": datetime.now(timezone.utc),
+                "generated_at": datetime.now(nairobi_tz),
                 "include_predictions": request.include_predictions,
             },
         }

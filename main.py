@@ -57,6 +57,7 @@ async def lifespan(app: FastAPI):
 
    
     # Start the nightly reporting service
+    """
     asyncio.create_task(nightly_report_task())
     logger.info("Nightly report background task started.")
     for i in range(0, len(CAMERAS), BATCH_SIZE):
@@ -65,7 +66,7 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(capture_camera_frames(cam_id, config))
         await asyncio.sleep(1)
     logger.info(f"Started {len(CAMERAS)} camera capture tasks.")
-
+    """
     yield
 
     logger.info("Application shutting down...")

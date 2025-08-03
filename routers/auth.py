@@ -16,13 +16,14 @@ from utils.db.base import AsyncSession, get_db, execute_query
 
 # from utils.db.conversation_db import Conversation
 from utils.db.user_db import User, UserManager, UserGroup
+from utils.timezone import nairobi_tz
 
 
 # Loading env and its variables
 load_dotenv()
 TOKEN_VALIDITY_DAYS = int(os.getenv("TOKEN_VALIDITY_DAYS", "30"))
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
+SECRET_KEY: str = os.getenv("SECRET_KEY", "")
+ALGORITHM: str = os.getenv("ALGORITHM", "")
 
 
 # Initialize templates
@@ -111,9 +112,9 @@ async def authenticate_user(username: str, password: str, db: AsyncSession):
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(nairobi_tz) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(days=TOKEN_VALIDITY_DAYS)
+        expire = datetime.now(nairobi_tz) + timedelta(days=TOKEN_VALIDITY_DAYS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -129,7 +130,7 @@ async def get_current_user(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
+        username: str = payload.get("sub", "")
         if username is None:
             raise credentials_exception
         token_data = TokenData(username=username)
@@ -174,7 +175,7 @@ async def login_for_access_token(
     )
 
     # Update last login
-    user.last_login = datetime.now(timezone.utc)
+    user.last_login = datetime.now(nairobi_tz)
     await db.commit()
 
     return {"access_token": access_token, "token_type": "bearer"}
@@ -240,7 +241,7 @@ async def login_form_submit(
 
     access_token = create_access_token(data={"sub": user.username})
     # Update last login timestamp
-    user.last_login = datetime.now(timezone.utc)
+    user.last_login = datetime.now(nairobi_tz)
     db.commit()
 
     response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
@@ -320,7 +321,7 @@ async def register_form_submit(
             email=user_data["email"],
             phone_number=user_data["phone_number"],
             password_hash=get_password_hash(user_data["password"]),
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(nairobi_tz),
             is_active=True,
         )
 

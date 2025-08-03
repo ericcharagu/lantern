@@ -14,6 +14,7 @@ from prompts import PROMPT_WHATSAPP_ASSISTANT
 from schemas import GenerationRequest, LlmRequestPayload
 from services.analysis_service import gen_response
 from utils.cache import add_to_chat_history
+from utils.db.base import execute_query
 from utils.llm.llm_base import available_functions, llm_model, llm_pipeline, tools
 from utils.llm.text_processing import convert_llm_output_to_readable
 from utils.whatsapp.whatsapp import whatsapp_messenger
@@ -83,26 +84,25 @@ async def process_message_in_background(
                     logger.info(f"Calling function: {tool.function.name}")
                     logger.info(f"Arguments:'{tool.function.arguments}")        
                     # Get the actual function object
-                    output = function_to_call(**tool.function.arguments)
+                    output = await function_to_call(**tool.function.arguments)
                 else:
                     logger.info(f"Function {tool.function.name}not found")
 
             if llm_response.message.tool_calls:
                 messages.append(llm_response.message)
                 messages.append({'role': 'tool', 'content': str(output), 'tool_name': tool.function.name})
-            llm_pipeline_payload = LlmRequestPayload(
-                user_message=user_message,
-                user_number=user_number,
-                messages=messages,
-            )
-            final_response =await llm_pipeline(request=request, llm_request_payload=llm_pipeline_payload)
-            if not final_response.message.content:
-                logger.warning(f"LLM returned empty content for user {user_number}. Sending fallback.")
-                final_response.message.content = "I'm not sure how to respond to that. Could you please rephrase your request?"
-            else:
-                content=final_response.message.content
+        llm_pipeline_payload: LlmRequestPayload = LlmRequestPayload(
+            user_message=user_message,
+            user_number=user_number,
+            messages=messages,
+        )
+        final_response =await llm_pipeline(request=request, llm_request_payload=llm_pipeline_payload)
+        if not final_response.message.content:
+            logger.warning(f"LLM returned empty content for user {user_number}. Sending fallback.")
+            final_response.message.content = "I'm not sure how to respond to that. Could you please rephrase your request?"
+        content=final_response.message.content
+        
         cleaned_response = convert_llm_output_to_readable(content)
-        logger.info(cleaned_response)
         whatsapp_messenger(
             llm_text_output=cleaned_response, recipient_number=user_number
         )
@@ -149,7 +149,6 @@ async def handle_whatsapp_message(request: Request, background_tasks: Background
         user_message: str = ""
         media_id: str = ""
         user_number: str = ""
-        image_caption: str = ""
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
                 contact_info = change.get("value", {}).get("contacts", [])

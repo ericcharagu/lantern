@@ -3,16 +3,12 @@ from loguru import logger
 import json
 from datetime import datetime, timezone
 
-# Configure a specific logger for detections that rotates daily.
-# The filename will automatically include the date.
+from utils.timezone import nairobi_tz
+
 logger.add(
     "logs/detections/{time:YYYY-MM-DD}.log",
-    rotation="00:00",  # New file at midnight
-    compression="zip",
-    format="{message}",
-    level="INFO",
-    enqueue=True, # Make it thread-safe and asynchronous
-    serialize=False # We are writing json strings ourselves
+    rotation="1 week",  # New file at midnight
+
 )
 # Create a specific logger instance to avoid conflicts.
 detection_logger = logger.bind(name="detection_logger")
@@ -24,7 +20,7 @@ def log_human_detection(camera_name: str, location: str, yolo_response: dict):
     detections, and logs the result to a daily file if any are found.
     """
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(nairobi_tz)
         human_count = 0
         
         detection_json_strings = yolo_response.get("detections", [])

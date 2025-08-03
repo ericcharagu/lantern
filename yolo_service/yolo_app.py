@@ -45,9 +45,8 @@ async def detect_objects(file: UploadFile = File(...)):
         # Perform inference
         detection_results = model.predict(
             frame, conf=0.6, verbose=False, classes=[0, 1, 2, 3], stream=True
-        )  # Detect person, bicycle, motorbike, car
-        # Generating the annotated image/frame to be sent back
-        # Assuming clusters correspond to role types based on color
+        ) 
+
         return {
             "detections": [result.to_json() for result in detection_results],
         }

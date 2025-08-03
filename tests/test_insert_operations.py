@@ -9,6 +9,8 @@ import time
 import docker
 import os
 
+from utils.timezone import nairobi_tz
+
 # --- Test Setup ---
 fake = Faker()
 
@@ -67,7 +69,7 @@ def db_session(test_db):
 def generate_camera_data(num_rows=1):
     return [
         {
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(nairobi_tz),
             "camera_name": f"Cam_{fake.unique.random_number()}",
             "count": fake.random_int(min=1, max=100),
             "location": fake.city(),
@@ -96,7 +98,7 @@ def test_bulk_insert_1000_rows(test_db, db_session):
     data = generate_camera_data(1000)
     start_time = time.time()
 
-    execute_insert_query(CameraTraffic, data, batch_size=500)
+    execute_insert_query(DetectionLog, data, batch_size=500)
 
     duration = time.time() - start_time
     print(f"\nInserted 1000 rows in {duration:.2f} seconds")
@@ -106,17 +108,17 @@ def test_bulk_insert_1000_rows(test_db, db_session):
 
 
 def test_empty_insert(test_db):
-    execute_insert_query(CameraTraffic, [])
+    execute_insert_query(DetectionLog, [])
 
 
 def test_data_integrity(test_db, db_session):
     data = {
-        "timestamp": datetime.now(timezone.utc),
+        "timestamp": datetime.now(nairobi_tz),
         "camera_name": "Integrity_Test",
         "count": 42,
         "is_holiday": False,
     }
-    execute_insert_query(CameraTraffic, data)
+    execute_insert_query(DetectionLog, data)
 
     row = db_session.execute(
         text("SELECT * FROM camera_traffic WHERE camera_name = 'Integrity_Test'")

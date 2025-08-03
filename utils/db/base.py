@@ -21,6 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from utils.timezone import nairobi_tz
 
 # Define logger path
 logger.add("./logs/base_db.log", rotation="1 week")
@@ -60,23 +61,11 @@ class DetectionLog(Base):
     def __repr__(self):
         return f"<DetectionLog(id={self.id}, object='{self.object_name}', camera='{self.camera_name}')>"
 
-class CameraTraffic(Base):
-    __tablename__ = "camera_traffic"
-    id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime(timezone=True))
-    camera_name = Column(String(50))
-    count = Column(Integer)
-    location = Column(String(50))
-    direction = Column(String(10))
-    day_of_week = Column(String(10))
-    is_holiday = Column(Boolean)
-
-
 class MobileRequestLog(Base):
     __tablename__ = "mobile_request_logs"
     id = Column(String, primary_key=True, index=True)
     client_timestamp = Column(DateTime, nullable=True)
-    server_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    server_timestamp = Column(DateTime, default=lambda: datetime.now(nairobi_tz))
     prompt = Column(Text, nullable=False)
     response = Column(Text, nullable=True)
     status = Column(String(50), nullable=False)
@@ -133,7 +122,7 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def execute_query(query: str, params: dict = None) -> list:
+async def execute_query(query: str, params: dict={}) -> list:
     """Execute a read-only query and return results as list of dictionaries."""
     try:
         async with async_engine.connect() as conn:

@@ -5,7 +5,7 @@ from datetime import datetime
 from utils.db.base import execute_query
 
 # Define logger path
-logger.add("./logs/db.log", rotation="700 MB")
+logger.add("./logs/db.log", rotation="1 week")
 
 
 async def get_traffic_by_date(target_date: Any) -> list:

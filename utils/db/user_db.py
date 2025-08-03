@@ -10,6 +10,7 @@ from sqlalchemy import (
 )
 import enum
 from sqlalchemy.orm import relationship
+from utils.timezone import nairobi_tz
 from werkzeug.security import generate_password_hash, check_password_hash
 from loguru import logger
 from typing import Optional
@@ -40,9 +41,7 @@ class User(Base):
     phone_number = Column(String(20), nullable=True)  # Optional phone number
     password_hash = Column(String(255), nullable=False)
     # username = Column(String(50), unique=True, nullable=True)
-    created_at = Column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
-    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(nairobi_tz))
     last_login = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
 
@@ -116,7 +115,7 @@ class UserManager:
             )
 
             if user and user.check_password(password):
-                user.last_login = datetime.now(timezone.utc)
+                user.last_login = datetime.now(nairobi_tz)
                 self.session.commit()
                 logger.info(f"User {user.username} authenticated successfully")
                 return user
