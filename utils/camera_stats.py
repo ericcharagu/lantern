@@ -13,13 +13,66 @@ logger.add("./logs/camera_stats.log", rotation="1 week")
 
 Base = declarative_base()
 
+<<<<<<< HEAD
+=======
+
+class CameraTrackingData(Base):
+    __tablename__ = "camera_tracking_data"
+    id = Column(Integer, primary_key=True)
+    tracker_id = Column(Integer, nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+    x_center = Column(Float, nullable=False)
+    y_center = Column(Float, nullable=False)
+    bbox = Column(JSON, nullable=False)
+    class_id = Column(Integer, nullable=False)
+    confidence = Column(Float, nullable=False)
+    camera_id = Column(Integer, nullable=False)
+
+
+<<<<<<< HEAD
+# Connection setup
+def get_connection_string():
+    with open("./secrets/postgres_secrets.txt", "r") as f:
+        password = f.read().strip()
+
+    return f"postgresql://{os.getenv('DB_USER', 'postgres')}:{password}@{os.getenv('DB_HOST', 'postgres')}:{os.getenv('DB_PORT', 5432)}/{os.getenv('DB_NAME', 'postgres')}"
+
+
+engine = create_engine(get_connection_string(), pool_pre_ping=True, pool_recycle=300)
+Session = sessionmaker(bind=engine)
+
+
+# Statistics functions
+class CameraStats:
+    def __init__(self):
+        self.session = Session()
+
+    def get_detection_counts(self, hours=24):
+        """Get detection counts per camera for last N hours"""
+        time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
+        return (
+            self.session.query(
+                CameraTrackingData.camera_id,
+                func.count(CameraTrackingData.id).label("detection_count"),
+            )
+            .filter(CameraTrackingData.timestamp >= time_threshold)
+            .group_by(CameraTrackingData.camera_id)
+            .all()
+=======
+>>>>>>> 35eba9bd7ecbaf9fcec198f2555ef8242e809dc9
 async def get_detection_counts(session: AsyncSession, hours: int = 24) -> list:
     """Get detection counts per camera for the last N hours."""
     time_threshold = datetime.now(nairobi_tz) - timedelta(hours=hours)
     stmt = (
         select(
+<<<<<<< HEAD
             DetectionLog.camera_name,
             func.count(DetectionLog.id).label("detection_count"),
+=======
+            CameraTrackingData.camera_id,
+            func.count(CameraTrackingData.id).label("detection_count"),
+>>>>>>> origin/main
+>>>>>>> 35eba9bd7ecbaf9fcec198f2555ef8242e809dc9
         )
         .where(DetectionLog.timestamp >= time_threshold)
         .group_by(DetectionLog.camera_name)

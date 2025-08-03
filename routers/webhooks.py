@@ -33,7 +33,7 @@ os.makedirs("media_files", exist_ok=True)
 
 # Load secrets securely from environment variables
 VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN")
-with open(file="/app/secrets/whatsapp_secrets.txt", mode="r") as f:
+with open(file="./secrets/whatsapp_secrets.txt", mode="r") as f:
     APP_SECRET = f.read().strip()
 
 

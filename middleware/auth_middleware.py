@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 # load env variables
 load_dotenv()
-with open("/app/secrets/request_secrets.txt", "r") as f:
+with open("./secrets/request_secrets.txt", "r") as f:
     secret_key = f.read().strip
 ALGORITHIM = "HS256"
 
