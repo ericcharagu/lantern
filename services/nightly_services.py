@@ -1,4 +1,10 @@
 # services/nightly_report_service.py
+#from pytz import _UTCclass
+
+
+#from pytz.tzinfo import DstTzInfo, StaticTzInfo
+from pytz.tzinfo import BaseTzInfo
+
 import asyncio
 from datetime import datetime, time, timedelta
 from sqlalchemy import select, func, and_
@@ -11,6 +17,10 @@ from utils.timezone import nairobi_tz
 
 # Add a logger for this service
 logger.add("logs/nightly_reporter.log", rotation="1 week", level="INFO")
+#nbo_time: _UTCclass | StaticTzInfo | DstTzInfo=pytz.timezone("Africa/Nairobi") 
+nbo_time: BaseTzInfo = pytz.timezone("Africa/Nairobi")
+
+def count_nightly_detections() -> int:
 
 async def count_nightly_detections() -> int:
     """

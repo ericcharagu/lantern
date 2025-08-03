@@ -18,8 +18,7 @@ from utils.db.base import execute_query
 from utils.llm.llm_base import available_functions, llm_model, llm_pipeline, tools
 from utils.llm.text_processing import convert_llm_output_to_readable
 from utils.whatsapp.whatsapp import whatsapp_messenger
-from ollama import chat
-
+>>>>>>>>> Temporary merge branch 2
 
 # Add logging path
 logger.add("./logs/webhooks.log", rotation="1 week")
@@ -31,6 +30,10 @@ router = APIRouter(
 # Ensure media directory exists
 os.makedirs("media_files", exist_ok=True)
 
+<<<<<<<<< Temporary merge branch 1
+@router.post("/webhooks", name = "recieve_whatsapp_request")
+async def process_whatsapp_request(request: Request):
+=========
 # Load secrets securely from environment variables
 VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN")
 with open(file="./secrets/whatsapp_secrets.txt", mode="r") as f:
@@ -137,6 +140,7 @@ async def handle_whatsapp_message(request: Request, background_tasks: Background
     # )
     # if not verify_signature(await request.body(), signature):
     #     raise HTTPException(status_code=403, detail="Invalid signature")
+>>>>>>>>> Temporary merge branch 2
 
     try:
         data = await request.json()

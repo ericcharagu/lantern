@@ -13,8 +13,6 @@ logger.add("./logs/camera_stats.log", rotation="1 week")
 
 Base = declarative_base()
 
-<<<<<<< HEAD
-=======
 
 class CameraTrackingData(Base):
     __tablename__ = "camera_tracking_data"
@@ -29,7 +27,6 @@ class CameraTrackingData(Base):
     camera_id = Column(Integer, nullable=False)
 
 
-<<<<<<< HEAD
 # Connection setup
 def get_connection_string():
     with open("./secrets/postgres_secrets.txt", "r") as f:
@@ -58,21 +55,6 @@ class CameraStats:
             .filter(CameraTrackingData.timestamp >= time_threshold)
             .group_by(CameraTrackingData.camera_id)
             .all()
-=======
->>>>>>> 35eba9bd7ecbaf9fcec198f2555ef8242e809dc9
-async def get_detection_counts(session: AsyncSession, hours: int = 24) -> list:
-    """Get detection counts per camera for the last N hours."""
-    time_threshold = datetime.now(nairobi_tz) - timedelta(hours=hours)
-    stmt = (
-        select(
-<<<<<<< HEAD
-            DetectionLog.camera_name,
-            func.count(DetectionLog.id).label("detection_count"),
-=======
-            CameraTrackingData.camera_id,
-            func.count(CameraTrackingData.id).label("detection_count"),
->>>>>>> origin/main
->>>>>>> 35eba9bd7ecbaf9fcec198f2555ef8242e809dc9
         )
         .where(DetectionLog.timestamp >= time_threshold)
         .group_by(DetectionLog.camera_name)

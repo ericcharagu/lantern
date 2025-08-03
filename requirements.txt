@@ -25,4 +25,5 @@ pydantic[email]
 valkey[libvalkey]
 pytest
 pytz
+asyncpg
 redis

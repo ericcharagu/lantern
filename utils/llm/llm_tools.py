@@ -39,7 +39,7 @@ async def user_query_to_sql(user_message:str, sql:str, params:dict[str, Any])->A
     Ensure to convert any time or date formats into the default datetime format( 2025-08-02 11:27:29.298631+00 ) for the sql statement
 
     filters = []
-    select = "COUNT(*) as Count"
+    select = "COUNT(*) as Count`"
     group_by:str = ""
     order_by:str= ""
     time_range :datetime = None

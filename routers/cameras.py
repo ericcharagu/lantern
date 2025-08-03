@@ -22,7 +22,9 @@ from utils.timezone import nairobi_tz
 
 # Configure logging
 logger.add("./logs/multi-camera.log", rotation="1 week")
-with open("/app/secrets/camera_login_secrets.txt", "r") as f:
+with open("./secrets/camera_login_secrets.txt", "r") as f:
+
+
     camera_rtsp_password = f.read().strip()
 load_dotenv()
 # Constants
@@ -41,7 +43,7 @@ YOLO_SERVICE_URL = "http://yolo_service:5000/detect"
 
 # Create a single, reusable async client for performance
 async_http_client = httpx.AsyncClient(timeout=10.0)
-CAMERAS: dict[int, dict[str, int | str]] = {
+"""CAMERAS: dict[int, dict[str, int | str]] = {
     1: {
         "channel": 1,
         "name": "Third Floor Left",
@@ -52,8 +54,8 @@ CAMERAS: dict[int, dict[str, int | str]] = {
         "name": "Inner Reception",
         "location": "Ground Floor",
     },}
-
-""" CAMERAS:dict[int, dict[str, int | str]]  = {
+"""
+CAMERAS:dict[int, dict[str, int | str]]  = {
     1: {
         "channel": 1,
         "name": "Third Floor Left",
@@ -212,7 +214,7 @@ CAMERAS: dict[int, dict[str, int | str]] = {
         "name": "First Floor Left",
         "location": "First Floor",
     },
-} """
+ }
  
 detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
