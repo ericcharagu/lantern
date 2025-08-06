@@ -44,18 +44,7 @@ YOLO_SERVICE_URL = "http://yolo_service:5000/detect"
 # Create a single, reusable async client for performance
 async_http_client = httpx.AsyncClient(timeout=10.0)
 
-CAMERAS: dict[int, dict[str, int | str]] = {
-    1: {
-        "channel": 1,
-        "name": "Third Floor Left",
-        "location": "Third Floor",
-    },
-    2: {
-        "channel": 2,
-        "name": "Inner Reception",
-        "location": "Ground Floor",
-    },}
-"""
+
 CAMERAS:dict[int, dict[str, int | str]]  = {
     1: {
         "channel": 1,
@@ -216,7 +205,7 @@ CAMERAS:dict[int, dict[str, int | str]]  = {
         "location": "First Floor",
     },
  }
-"""
+
 detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
 current_frames: dict[int, Optional[bytes]] = {channel: None for channel in CAMERAS}
