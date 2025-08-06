@@ -1,31 +1,18 @@
 # utils/camera_stats.py
 
+import os
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import declarative_base
 from datetime import datetime, timedelta
 from loguru import logger
 from utils.timezone import nairobi_tz
-from .db.base import DetectionLog  
+from .db.base import AsyncSessionLocal, DetectionLog 
 
 # Logging
 logger.add("./logs/camera_stats.log", rotation="1 week")
 
 Base = declarative_base()
-
-
-class CameraTrackingData(Base):
-    __tablename__ = "camera_tracking_data"
-    id = Column(Integer, primary_key=True)
-    tracker_id = Column(Integer, nullable=False)
-    timestamp = Column(DateTime, nullable=False)
-    x_center = Column(Float, nullable=False)
-    y_center = Column(Float, nullable=False)
-    bbox = Column(JSON, nullable=False)
-    class_id = Column(Integer, nullable=False)
-    confidence = Column(Float, nullable=False)
-    camera_id = Column(Integer, nullable=False)
-
 
 # Connection setup
 def get_connection_string():
@@ -34,33 +21,27 @@ def get_connection_string():
 
     return f"postgresql://{os.getenv('DB_USER', 'postgres')}:{password}@{os.getenv('DB_HOST', 'postgres')}:{os.getenv('DB_PORT', 5432)}/{os.getenv('DB_NAME', 'postgres')}"
 
-
-engine = create_engine(get_connection_string(), pool_pre_ping=True, pool_recycle=300)
-Session = sessionmaker(bind=engine)
-
-
 # Statistics functions
 class CameraStats:
     def __init__(self):
-        self.session = Session()
+        self.session = AsyncSessionLocal()
 
     def get_detection_counts(self, hours=24):
         """Get detection counts per camera for last N hours"""
-        time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
+        time_threshold = datetime.now(nairobi_tz) - timedelta(hours=hours)
         return (
             self.session.query(
-                CameraTrackingData.camera_id,
-                func.count(CameraTrackingData.id).label("detection_count"),
+                DetectionLog.camera_id,
+                func.count(DetectionLog.id).label("detection_count"),
             )
-            .filter(CameraTrackingData.timestamp >= time_threshold)
-            .group_by(CameraTrackingData.camera_id)
+            .filter(DetectionLog.timestamp >= time_threshold)
+            .group_by(DetectionLog.camera_id)
             .all()
-        )
         .where(DetectionLog.timestamp >= time_threshold)
         .group_by(DetectionLog.camera_name)
-    )
-    result = await session.execute(stmt)
-    return result.mappings().all()
+        )
+        #result = await session.execute(stmt)
+        #return result.mappings().all()
 
 
 async def get_confidence_stats(session: AsyncSession) -> list:

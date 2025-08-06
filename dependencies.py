@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import valkey
+from valkey.asyncio import Valkey as AsyncValkey
 from ollama import AsyncClient
 from config import settings
 from utils.db.user_db import UserGroup, User
@@ -9,7 +10,7 @@ from routers.auth import get_current_active_user
 
 # Initialize clients once and reuse them
 ollama_client = AsyncClient(host=settings.OLLAMA_HOST)
-valkey_client = valkey.Valkey(
+valkey_client = AsyncValkey(
     host=settings.VALKEY_HOST, port=settings.VALKEY_PORT, db=0, decode_responses=True
 )
 
@@ -23,7 +24,7 @@ def get_ollama_client():
     return AsyncClient(host=settings.OLLAMA_HOST)    
 
 llm_client=get_ollama_client()
-
+valkey_client=get_valkey_client()
 def require_user_group(required_groups: list[UserGroup]):
     """
     A dependency factory that creates a dependency to check for specific user groups.

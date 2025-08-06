@@ -21,8 +21,14 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
     # Nightly report recipient number
-    NIGHTLY_REPORT_RECIPIENT_NUMBER:str = os.getenv("254736391323", "")
-
+    #NIGHTLY_REPORT_RECIPIENT_NUMBER:list[str] = ["254736391323"]
+    NIGHTLY_REPORT_RECIPIENT_NUMBER:list[str]=["254715832131", "254791891711","254114780108,"]
+    NIGHT_CAPTURE_START_HOUR:int=12
+    NIGHT_CAPTURE_START_MINUTE:int=0 
+    NIGHT_CAPTURE_END_HOUR:int=14
+    NIGHT_CAPTURE_END_MINUTE:int=00
+    SEND_NIGHT_REPORT_HOUR:int=5
+    SEND_NIGHT_REPORT_MINUTE:int=00
 
 # Create a single settings instance to be used across the application
 settings = Settings()

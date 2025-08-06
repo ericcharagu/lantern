@@ -48,6 +48,8 @@ class DetectionLog(Base):
 
     __tablename__ = "detection_logs"
     id = Column(Integer, primary_key=True, autoincrement=True)
+    tracker_id = Column(Integer, index=True, nullable=True)
+    
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     camera_name = Column(String(100), nullable=False)
     location = Column(String(100))

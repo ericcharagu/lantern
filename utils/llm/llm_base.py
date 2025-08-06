@@ -76,8 +76,8 @@ class ChatHistory:
 
 
 
-tools: list[Any] = [get_json_schema(user_query_to_sql), get_json_schema(internet_search_tool)]
-available_functions={"user_query_to_sql":user_query_to_sql, "internet_search_tool":internet_search_tool}
+tools: list[Any] = [user_query_to_sql]
+available_functions={"user_query_to_sql":user_query_to_sql}
 chat_history = ChatHistory()
 
 # Optimized LLM pipeline

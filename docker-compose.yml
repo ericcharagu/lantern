@@ -139,6 +139,7 @@ volumes:
   ollama_data:
   postgres_data:
   cache_data:
+  pgadmin_data:
 
 secrets:
   postgres_secrets:

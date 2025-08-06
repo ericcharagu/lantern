@@ -19,7 +19,7 @@ from loguru import logger
 from utils.db.base import Base, DetectionLog, bulk_insert_query, single_insert_query
 from utils.holidays import holiday_checker
 from utils.timezone import nairobi_tz
-
+import supervision as sv
 # Configure logging
 logger.add("./logs/multi-camera.log", rotation="1 week")
 with open("./secrets/camera_login_secrets.txt", "r") as f:
@@ -43,7 +43,8 @@ YOLO_SERVICE_URL = "http://yolo_service:5000/detect"
 
 # Create a single, reusable async client for performance
 async_http_client = httpx.AsyncClient(timeout=10.0)
-"""CAMERAS: dict[int, dict[str, int | str]] = {
+
+CAMERAS: dict[int, dict[str, int | str]] = {
     1: {
         "channel": 1,
         "name": "Third Floor Left",
@@ -215,12 +216,14 @@ CAMERAS:dict[int, dict[str, int | str]]  = {
         "location": "First Floor",
     },
  }
- 
+"""
 detection_queue = asyncio.Queue(maxsize=100)
 stream_active = True
 current_frames: dict[int, Optional[bytes]] = {channel: None for channel in CAMERAS}
 frame_locks: dict[int, Any] = {channel: asyncio.Lock() for channel in CAMERAS}
-
+trackers: dict[int, sv.ByteTrack] = {
+    cam_id: sv.ByteTrack() for cam_id in CAMERAS.keys()
+}
 async def detection_processor():
     """Background task to process detection queue and send to database"""
     batch = []
@@ -240,9 +243,8 @@ async def detection_processor():
             current_time: float = time.time()
             if (len(batch) >= 10) or (batch and (current_time - last_batch_time) > 30):
                 if batch:
-                    flat_batch: list[Any] = [item for sublist in batch for item in sublist]
                     logger.info(f"Inserting batch of {len(batch)} detections into the database.")
-                    await bulk_insert_query(db_table_name=DetectionLog, query_values=flat_batch)
+                    await bulk_insert_query(db_table_name=DetectionLog, query_values=batch)
                     batch.clear()
                     last_batch_time: float = current_time
 
@@ -282,11 +284,11 @@ async def get_detections_from_service(frame: np.ndarray) -> Optional[dict]:
         else:
             pass
     except ValueError as e:
-        logger.debug(f"HTTP request to YOLO service failed: {e}")
+        logger.error(f"HTTP request to YOLO service failed: {e}")
         return None
-    except Exception as e:
-        logger.debug(f"An unexpected error occurred when calling YOLO service: {e}")
-        return None
+    #except Exception as e:
+    #    logger.debug(f"An unexpected error occurred when calling YOLO service: {e}",   exc_info=True)
+    #    return None
 
 
 @logger.catch()
@@ -365,28 +367,55 @@ async def capture_camera_frames(cam_id: int, camera_config: dict):
                 last_detection_time = current_time
                 detection_result = await get_detections_from_service(frame)
                 if detection_result:
-                    detections_to_log: list[dict[str, Any]] = []
-                    Timestamp = datetime.now(nairobi_tz)
+                    try:
+                        all_detections = []
+                        for result_str in detection_result.get("detections", []):
+                            detections_list = json.loads(result_str)
+                            for det in detections_list:
+                                box = det.get('box', {})
+                                all_detections.append({
+                                    'xyxy': np.array([box.get("x1"), box.get("y1"), box.get("x2"), box.get("y2")]),
+                                    'confidence': det.get("confidence"),
+                                    'class_id': det.get("class"),
+                                    'name': det.get("name") # Keep name for logging
+                                })
+                        
+                        if not all_detections:
+                            continue
 
-                    for result_str in detection_result.get("detections", []):
-                        detections_list = json.loads(result_str)
-                        for det in detections_list:
-                            box = det.get('box', {})
-                            detections_to_log.append({
-                                "timestamp": Timestamp,
+                        # Create a single sv.Detections object for the frame
+                        detections = sv.Detections(
+                            xyxy=np.array([d['xyxy'] for d in all_detections]),
+                            confidence=np.array([d['confidence'] for d in all_detections]),
+                            class_id=np.array([d['class_id'] for d in all_detections]),
+                        )
+                        
+                        # 2. Update the tracker for THIS camera
+                        # This adds the `tracker_id` to each detection in the object
+                        tracked_detections = trackers[cam_id].update_with_detections(detections)
+
+                        # 3. Queue each detection with its new tracker_id
+                        for i, detection_xyxy in enumerate(tracked_detections.xyxy):
+                            detection_dict = {
+                                "timestamp": datetime.now(nairobi_tz),
+                                "tracker_id": int(tracked_detections.tracker_id[i]) if tracked_detections.tracker_id is not None else None,
                                 "camera_name": camera_config["name"],
                                 "location": camera_config["location"],
-                                "object_name": det.get("name"),
-                                "confidence": det.get("confidence"),
-                                "box_x1": box.get("x1"),
-                                "box_y1": box.get("y1"),
-                                "box_x2": box.get("x2"),
-                                "box_y2": box.get("y2"),
-                            })
-                    if detections_to_log:
-                        for detection in detections_to_log:
-                            await detection_queue.put(detections_to_log)
-                           
+                                "object_name": all_detections[i]['name'], # Get name from original list
+                                "confidence": float(tracked_detections.confidence[i]),
+                                "box_x1": float(detection_xyxy[0]),
+                                "box_y1": float(detection_xyxy[1]),
+                                "box_x2": float(detection_xyxy[2]),
+                                "box_y2": float(detection_xyxy[3]),
+                            }
+                            await detection_queue.put(detection_dict)
+                            
+                    except (json.JSONDecodeError, KeyError, IndexError) as e:
+                        logger.error(f"Error processing detection/tracking response: {e}", exc_info=True)
+                elif detection_result:
+                    logger.error(f"YOLO service error: {detection_result.status_code} - {detection_result.text}")
+
+    
 
             await asyncio.sleep(1.0 / VIDEO_FPS)  # Control the loop speed
 

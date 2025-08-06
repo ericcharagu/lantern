@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import json
 from datetime import date, datetime, timezone
-
+from valkey.asyncio import Valkey as AsyncValkey
 from dependencies import ollama_client
 from loguru import logger
 from ollama import AsyncClient
@@ -37,7 +37,7 @@ async def gen_response(messages: list[dict]):
 async def process_analysis_in_background(
     job_id: str,
     request: AnalysisRequest,
-    valkey_client: valkey.Valkey,
+    valkey_client: AsyncValkey,
     ollama_client: AsyncClient,
 ):
     logger.info(f"Starting background analysis for job_id: {job_id}")
