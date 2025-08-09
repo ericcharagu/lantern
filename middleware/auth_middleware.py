@@ -7,11 +7,8 @@ from dotenv import load_dotenv
 
 # load env variables
 load_dotenv()
-with open("./secrets/request_secrets.txt", "r") as f:
-    secret_key = f.read().strip
-ALGORITHIM = "HS256"
-
-
+secret_key:str=os.getenv("SECRET_KEY", "")
+algorithm_key:str=os.getenv("ALGORITHIM", "")
 async def auth_middleware(request: Request, call_next):
     # List of public routes that don't require authentication
     public_routes = [
@@ -40,8 +37,7 @@ async def auth_middleware(request: Request, call_next):
         # Verify token
         payload = jwt.decode(
             token.split()[1],  # Remove "Bearer " prefix
-            os.getenv("SECRET_KEY"),
-            algorithms=[os.getenv("ALGORITHM")],
+            secret_key, algorithm_key,
         )
         request.state.user = payload.get("sub")
     except JWTError:

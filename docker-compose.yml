@@ -21,9 +21,7 @@ services:
     env_file:
       - .env
     secrets:
-      - postgres_secrets
-      - camera_secrets
-      - request_secrets
+      - lantern_db_secrets
     networks:
       - llm_network
     ports:
@@ -89,14 +87,13 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_secrets
+      - POSTGRES_DB=lantern_apartments
+      - POSTGRES_USER=lantern
+      - POSTGRES_PASSWORD_FILE=/run/secrets/lantern_db_secrets
     secrets:
-      - postgres_secrets
-    user: postgres
+      - lantern_db_secrets
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -U lantern -d lantern_apartments"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -142,11 +139,5 @@ volumes:
   pgadmin_data:
 
 secrets:
-  postgres_secrets:
-    file: ./secrets/postgres_secrets.txt
-  whatsapp_secrets:
-    file: ./secrets/whatsapp_secrets.txt
-  request_secrets:
-    file: ./secrets/request_secrets.txt
-  camera_secrets:
-    file: ./secrets/camera_login_secrets.txt
+  lantern_db_secrets:
+    file: ./secrets/lantern_db_secrets.txt

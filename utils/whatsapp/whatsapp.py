@@ -10,14 +10,14 @@ load_dotenv()
 logger.add("./logs/whatsapp.log", rotation="1 week")
 # Configuration
 API_VERSION = "v22.0"
-PHONE_NUMBER_ID: int = int(os.getenv("PHONE_NUMBER_ID", 0))
-ACCESS_TOKEN=os.getenv("WHATSAPP_ACCESS_TOKEN")
+PHONE_NUMBER_ID: int = int(os.getenv("PHONE_NUMBER_ID", 728231300374679))
+ACCESS_TOKEN=os.getenv("WHATSAPP_ACCESS_TOKEN"," EAARtxxZAZBAGgBPJt2tyLQEtd0aj68ljIlz9F3ZAQmo2dTtZAkzdnbDt3g5pZA9cYpGWfDqgNf7a9evOSjaBmJhWB9s11mI4SSBypSYI768Ibil2aO2ZBZCLLoSFYfziMTUZCsboZBZA1ddcSIXf9MnZBFdp4QwFHQ9hJW2WNyUuMSxdrIASkc8WULYiXG2VkImxQZDZD")
 @logger.catch
 def whatsapp_messenger(llm_text_output: Any, recipient_number:str):
     if not ACCESS_TOKEN:
         raise ValueError("ACCESS_TOKEN is not valid")
 
-    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
+    url = f"https://graph.facebook.com/v23.0/{PHONE_NUMBER_ID}/messages"
 
     headers = {
         "Authorization": f"Bearer {ACCESS_TOKEN}",
@@ -45,4 +45,4 @@ def whatsapp_messenger(llm_text_output: Any, recipient_number:str):
 """
 
 # used for testing
-# whatsapp_messenger("This is the test for Lantern")
+#whatsapp_messenger("This is the test for Lantern", recipient_number="")

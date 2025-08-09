@@ -1,19 +1,20 @@
-<!-- FILE: templates/dash.html -->
+<!-- templates/dash.html -->
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Analytics Dashboard</title>
-    <!-- Add Bootstrap for styling and DataTables for the interactive table -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
     <link rel="stylesheet" href="{{ url_for('static', path='/dash.css') }}">
 </head>
+
 <body>
     <div class="container mt-4">
         <header class="mb-4">
-            <h1>Foot Traffic Dashboard</h1>
+            <h1>Detection Analytics Dashboard</h1>
             <p class="text-muted">Welcome, {{ user.email }}. Here is the summary for today.</p>
         </header>
 
@@ -22,33 +23,34 @@
             <div class="col-md-3">
                 <div class="card text-center mb-3">
                     <div class="card-body">
-                        <h5 class="card-title">Total Traffic</h5>
-                        <p class="card-text fs-2 fw-bold">{{ stats.get('total_traffic', 'N/A') }}</p>
+                        <h5 class="card-title">Total Detections Today</h5>
+                        <p class="card-text fs-2 fw-bold">{{ stats.get('total_detections', 'N/A') }}</p>
                     </div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="card text-center mb-3">
                     <div class="card-body">
-                        <h5 class="card-title">Peak Traffic (Single Location)</h5>
-                        <p class="card-text fs-2 fw-bold">{{ stats.get('max_traffic', 'N/A') }}</p>
+                        <h5 class="card-title">Person Detections</h5>
+                        <p class="card-text fs-2 fw-bold">{{ stats.get('total_person_detections', 'N/A') }}</p>
                     </div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="card text-center text-white bg-primary mb-3">
                     <div class="card-body">
-                        <h5 class="card-title">Peak Hour</h5>
-                        <p class="card-text fs-2 fw-bold">{{ stats.get('peak_hour', {}).get('hour', 'N/A') }}:00</p>
-                        <small>at {{ stats.get('peak_hour', {}).get('location', 'N/A') }}</small>
+                        <h5 class="card-title">Busiest Person Hour</h5>
+                        <p class="card-text fs-2 fw-bold">{{ stats.get('busiest_hour_person', {}).get('hour', 'N/A')
+                            }}:00</p>
+                        <small>{{ stats.get('busiest_hour_person', {}).get('count', 'N/A') }} detections</small>
                     </div>
                 </div>
             </div>
-             <div class="col-md-3">
+            <div class="col-md-3">
                 <div class="card text-center mb-3">
                     <div class="card-body">
-                        <h5 class="card-title">Active Cameras</h5>
-                        <p class="card-text fs-2 fw-bold">{{ stats.get('unique_locations', 'N/A') }}</p>
+                        <h5 class="card-title">Active Cameras Today</h5>
+                        <p class="card-text fs-2 fw-bold">{{ stats.get('active_cameras', 'N/A') }}</p>
                     </div>
                 </div>
             </div>
@@ -57,7 +59,7 @@
         <!-- Raw Data Table -->
         <div class="card mt-4">
             <div class="card-header">
-                <h3>Daily Traffic Data Points</h3>
+                <h3>Latest Detection Events</h3>
             </div>
             <div class="card-body">
                 <table id="trafficTable" class="table table-striped" style="width:100%">
@@ -66,25 +68,21 @@
                             <th>Timestamp</th>
                             <th>Camera Name</th>
                             <th>Location</th>
-                            <th>Count</th>
-                            <th>Direction</th>
-                            <th>Day</th>
-                            <th>Holiday</th>
+                            <th>Object</th>
+                            <th>Confidence</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% if raw_data %}
-                            {% for row in raw_data %}
-                            <tr>
-                                <td>{{ row.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                                <td>{{ row.camera_name }}</td>
-                                <td>{{ row.location }}</td>
-                                <td>{{ row.count }}</td>
-                                <td>{{ row.direction or 'N/A' }}</td>
-                                <td>{{ row.day_of_week }}</td>
-                                <td>{{ 'Yes' if row.is_holiday else 'No' }}</td>
-                            </tr>
-                            {% endfor %}
+                        {% for row in raw_data %}
+                        <tr>
+                            <td>{{ row.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td>{{ row.camera_name }}</td>
+                            <td>{{ row.location }}</td>
+                            <td>{{ row.object_name }}</td>
+                            <td>{{ "%.2f"|format(row.confidence * 100) }}%</td>
+                        </tr>
+                        {% endfor %}
                         {% endif %}
                     </tbody>
                 </table>
@@ -98,15 +96,16 @@
 
     </div>
 
-    <!-- JavaScript libraries -->
     <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script>
-        // Initialize the interactive table
-        $(document).ready(function() {
-            $('#trafficTable').DataTable();
+        $(document).ready(function () {
+            $('#trafficTable').DataTable({
+                "order": [[0, "desc"]] // Order by the first column (Timestamp) descending
+            });
         });
     </script>
 </body>
+
 </html>

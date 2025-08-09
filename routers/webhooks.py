@@ -20,7 +20,7 @@ from prompts import (
 import os
 logger.add("./logs/webhooks.log", rotation="1 week")
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
-VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFICATION_TOKEN")
+VERIFY_TOKEN = os.getenv("WHATSAPP_WEBHOOK_VERIFICATION_TOKEN")
 def build_query_from_filters(filters: Dict[str, Any]) -> Dict[str, Any]:
     """
     Builds a secure, parameterized SQL query from a dictionary of filters.
@@ -91,8 +91,8 @@ async def process_authorized_query(
     response = await ollama_client.chat(
         model=settings.LLM_MODEL_ID,
         messages=messages,
-        options={"temperature": 0.0}, # Be deterministic
-        format="json" # Force JSON output
+        options={"temperature": 0.0}, 
+        format="json" 
     )
     
     response_content = response.get("message", {}).get("content", "{}")
@@ -176,6 +176,7 @@ async def process_message_in_background(
             llm_text_output="I'm sorry, I encountered an internal error. Please try again later.",
             recipient_number=user_number
         )
+
 @router.get("")
 async def verify_whatsapp_webhook(
     hub_mode: str = Query(None, alias="hub.mode"),

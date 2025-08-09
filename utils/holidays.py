@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 from loguru import logger
-from utils.timezone import nairobi_tz
+#from utils.timezone import nairobi_tz
 
 logger.add("./logs/holiday_checker.log", rotation="1 week")
 
@@ -75,7 +75,7 @@ def get_kenyan_holidays(year=None):
 current_year = date.today().year
 holidays = get_kenyan_holidays(current_year)
 
-current_time_utc = datetime.now(nairobi_tz)
+current_time_utc = datetime.now()
 formatted_time = current_time_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -104,8 +104,9 @@ def holiday_checker(
 # Example usage:
 if __name__ == "__main__":
     # Holiday example
-    holiday_checker("2024-12-25T23:59:59Z", holidays)
+    logger.info(holiday_checker("2024-08-08T23:59:59Z", holidays))
 
     # Not a holiday
-    holiday_checker"2024-01-15T09:00:00Z", holidays)
+    logger.info(holiday_checker("2024-01-15T09:00:00Z", holidays))
+
 """

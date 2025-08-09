@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import asyncio
 import numpy as np
 from umap import UMAP
 from sklearn.cluster import KMeans
@@ -10,6 +11,7 @@ import cv2
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
 import supervision as sv
+from ultralytics import YOLO
 
 # Models
 IMAGE_EMBEDDING_MODEL = AutoModel.from_pretrained("facebook/dinov2-small")
@@ -110,3 +112,12 @@ async def person_role(yolo_results: Any) -> Dict[str, int]:
         role_counts[role_type] += np.sum(clusters == cluster_id)
 
     return role_counts
+"""
+For testing
+async def main():
+    model = YOLO("yolo11l.pt")
+    yolo_results = model.predict(source=0, show=True, stream=True)
+    return await person_role(yolo_results=yolo_results)
+if __name__=="__main__":
+    asyncio.run(main())
+"""

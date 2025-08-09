@@ -143,7 +143,9 @@ async def nightly_report_task():
             target_time += timedelta(days=1)
         
         sleep_duration: float = (target_time - now_nairobi).total_seconds()
-        logger.info(f"Nightly reporter sleeping for {sleep_duration / 3600:.2f} hours. Will run at {target_time}.")
+        sleep_hours = int(sleep_duration // 3600)
+        sleep_minutes = int((sleep_duration % 3600) // 60)
+        logger.info(f"Nightly reporter sleeping for {sleep_hours} hours and {sleep_minutes}. Will run at {target_time}.")
         await asyncio.sleep(sleep_duration)
 
         try:
@@ -151,7 +153,7 @@ async def nightly_report_task():
             report_date = (datetime.now(nairobi_tz) - timedelta(days=1))
             lock_key = f"nightly_report_lock:{report_date.strftime('%Y-%m-%d')}"
             # --- LOCKING MECHANISM ---
-            if not await _acquire_lock(lock_key):
+            if await _acquire_lock(lock_key):
                 logger.warning(f"Could not acquire lock for {lock_key}. Report for this day has likely already been sent. Skipping.")
                 # Sleep for a minute to avoid a tight loop if something is wrong
                 await asyncio.sleep(60)

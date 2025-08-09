@@ -1,34 +1,27 @@
+# routers/dashboard.py
 #!/usr/bin/env python3
 
 from datetime import date
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Request, Form, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import select, update, delete
 
 from dependencies import require_managerial_user
 from utils.db.user_db import User
-from utils.db.stats_db import get_traffic_analytics
+from utils.db.stats_db import get_traffic_analytics, get_latest_detections
+from utils.app_tools import calculate_traffic_statistics
 from utils.db.base import Camera, get_db, AsyncSession
-from pydantic import BaseModel
+
 
 router = APIRouter(
     prefix="/dashboard",
     tags=["Dashboard"],
-    dependencies=[Depends(require_managerial_user)],  # Secure the whole router
+    dependencies=[Depends(require_managerial_user)],
 )
 
-
-class CameraUpdate(BaseModel):
-    name: str
-    location: str
-    ip_address: str
-    direction: Optional[str] = None
-    is_active: bool
-
-
 templates = Jinja2Templates(directory="templates")
-
 
 @router.get("/", response_class=HTMLResponse)
 async def get_dashboard(
@@ -36,20 +29,20 @@ async def get_dashboard(
 ):
     """
     Serves the main dashboard page, visible only to managerial users.
-    It fetches and displays today's traffic statistics.
+    It fetches and displays today's detection statistics.
     """
-    today = date.today()
+    # Fetch and process the daily analytics
+    raw_analytics = await get_traffic_analytics(period='daily')
+    processed_stats = calculate_traffic_statistics(raw_analytics)
 
-    # Fetch and process the data
-    raw_analytics = await get_traffic_analytics(today)
-    # processed_stats = calculate_traffic_statistics(raw_analytics)
+    # Fetch the latest raw detection events to display in the table
+    latest_detections = await get_latest_detections(limit=250)
 
-    # The context dictionary passed to the template
     context = {
         "request": request,
         "user": current_user,
-        # "stats": processed_stats,
-        "raw_data": raw_analytics.get("daily_traffic_data", []),
+        "stats": processed_stats,
+        "raw_data": latest_detections, # Pass latest detections to the template
     }
 
     return templates.TemplateResponse("dash.html", context)
@@ -64,8 +57,7 @@ async def get_camera_management(request: Request, db: AsyncSession = Depends(get
     return templates.TemplateResponse(
         "partials/camera_management.html", {"request": request, "cameras": cameras}
     )
-
-
+# ... (The rest of the CRUD operations for cameras remain the same) ...
 # CREATE
 @router.post("/cameras")
 async def create_camera(

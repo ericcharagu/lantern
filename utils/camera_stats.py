@@ -40,8 +40,6 @@ class CameraStats:
         .where(DetectionLog.timestamp >= time_threshold)
         .group_by(DetectionLog.camera_name)
         )
-        #result = await session.execute(stmt)
-        #return result.mappings().all()
 
 
 async def get_confidence_stats(session: AsyncSession) -> list:
